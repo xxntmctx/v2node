@@ -269,7 +269,9 @@ install_v2node() {
     if  [[ -z "$version_param" ]] ; then
         last_version=$(curl -Ls "https://api.github.com/repos/xxntmctx/v2node/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}检测 v2node 版本失败，可能是超出 Github API 限制，请稍后再试，或手动指定 v2node 版本安装${plain}"
+            echo -e "${red}检测 v2node 版本失败！${plain}"
+            echo -e "${yellow}提示：你的新仓库 (xxntmctx/v2node) 可能还没有创建 Release。${plain}"
+            echo -e "${yellow}请在 GitHub 上创建一个 Release (例如标签 v1.0.0) 并上传编译好的二进制文件。${plain}"
             exit 1
         fi
         echo -e "${green}检测到最新版本：${last_version}，开始安装...${plain}"

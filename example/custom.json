@@ -1,0 +1,108 @@
+{
+  "_comment": "v2node 本地路由配置文件 - 标准 xray JSON 格式",
+  "_comment2": "默认路径: /etc/v2node/custom.json，也可在 config.yml 的 CustomConfigPath 中指定",
+  "_comment3": "节点 inboundTag 格式: [面板地址]-协议:节点ID，例：[https://your-panel.com]-vless:1",
+
+  "outbounds": [
+    {
+      "_comment": "【出口1】默认直连（内置，不需要填写，这里仅作说明）",
+      "_skip": true,
+      "protocol": "freedom",
+      "tag": "Default",
+      "settings": {
+        "domainStrategy": "UseIPv4v6"
+      }
+    },
+    {
+      "_comment": "【出口2】落地机 SOCKS5 代理（用于解锁 Netflix 等流媒体）",
+      "protocol": "socks",
+      "tag": "jp_proxy",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": 40000,
+            "users": []
+          }
+        ]
+      }
+    },
+    {
+      "_comment": "【出口3】VLESS 落地机示例",
+      "protocol": "vless",
+      "tag": "hk_out",
+      "settings": {
+        "vnext": [
+          {
+            "address": "your-hk-relay.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                "encryption": "none",
+                "flow": ""
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/relay"
+        },
+        "security": "tls"
+      }
+    }
+  ],
+
+  "routing": {
+    "_comment": "路由规则【从上到下匹配，先匹配先生效】",
+    "_comment2": "面板下发的规则会覆盖在这些规则之前（面板优先级最高）",
+    "rules": [
+      {
+        "_comment": "规则1：指定节点1的 Netflix 流量走日本落地机（按节点ID路由）",
+        "type": "field",
+        "inboundTag": ["[https://your-xboard-panel.com]-vless:1"],
+        "domain": ["geosite:netflix"],
+        "outboundTag": "jp_proxy"
+      },
+      {
+        "_comment": "规则2：所有节点的 Netflix 都走日本落地（不限制节点）",
+        "type": "field",
+        "domain": ["geosite:netflix", "geosite:hulu", "geosite:disney"],
+        "outboundTag": "jp_proxy"
+      },
+      {
+        "_comment": "规则3：国内 IP 直连，减少落地机带宽消耗",
+        "type": "field",
+        "ip": ["geoip:cn", "geoip:private"],
+        "outboundTag": "Default"
+      },
+      {
+        "_comment": "规则4：国内域名直连",
+        "type": "field",
+        "domain": ["geosite:cn"],
+        "outboundTag": "Default"
+      },
+      {
+        "_comment": "规则5：屏蔽广告域名",
+        "type": "field",
+        "domain": ["geosite:category-ads-all"],
+        "outboundTag": "block"
+      },
+      {
+        "_comment": "规则6：屏蔽 BT/P2P 下载，防止滥用",
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "block"
+      },
+      {
+        "_comment": "规则7：按端口屏蔽（屏蔽常见 SMTP 端口，防滥发邮件）",
+        "type": "field",
+        "port": "25, 465, 587",
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

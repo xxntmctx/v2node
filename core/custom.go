@@ -2,9 +2,11 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
 	panel "github.com/wyx2685/v2node/api/v2board"
 	"github.com/xtls/xray-core/app/dns"
 	"github.com/xtls/xray-core/app/router"
@@ -42,7 +44,7 @@ func hasOutboundWithTag(list []*core.OutboundHandlerConfig, tag string) bool {
 	return false
 }
 
-func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHandlerConfig, *router.Config, error) {
+func GetCustomConfig(infos []*panel.NodeInfo, localConfigPath string) (*dns.Config, []*core.OutboundHandlerConfig, *router.Config, error) {
 	//dns
 	queryStrategy := "UseIPv4v6"
 	if !hasPublicIPv6() {
@@ -236,5 +238,42 @@ func GetCustomConfig(infos []*panel.NodeInfo) (*dns.Config, []*core.OutboundHand
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
+	// Load local custom config and merge it *before* panel routes but *after* DNS/outbound defaults
+	localCfg, err := LoadLocalConfig(localConfigPath)
+	if err != nil {
+		log.WithField("err", err).Warn("failed to load local custom config, skipping")
+	}
+	if localCfg != nil {
+		// Merge extra outbounds from local config
+		for _, raw := range localCfg.Outbounds {
+			out := &coreConf.OutboundDetourConfig{}
+			if err := json.Unmarshal(raw, out); err != nil {
+				log.WithField("err", err).Warn("local config: skipping invalid outbound entry")
+				continue
+			}
+			if hasOutboundWithTag(coreOutboundConfig, out.Tag) {
+				log.WithField("tag", out.Tag).Warn("local config: outbound tag already exists, skipping")
+				continue
+			}
+			built, err := out.Build()
+			if err != nil {
+				log.WithField("err", err).Warn("local config: failed to build outbound, skipping")
+				continue
+			}
+			coreOutboundConfig = append(coreOutboundConfig, built)
+		}
+		// Rebuild RouterConfig merging local rules (prepend before panel rules)
+		if localCfg.Routing != nil && len(localCfg.Routing.Rules) > 0 {
+			// Prepend local rules before the panel-generated rules
+			allRules := append(localCfg.Routing.Rules, coreRouterConfig.RuleList...)
+			coreRouterConfig.RuleList = allRules
+			RouterConfig, err = coreRouterConfig.Build()
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("build router config with local rules: %w", err)
+			}
+		}
+	}
+
 	return DnsConfig, coreOutboundConfig, RouterConfig, nil
 }

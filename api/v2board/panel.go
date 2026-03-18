@@ -43,8 +43,12 @@ func New(c *conf.NodeConfig) (*Client, error) {
 	})
 	client.SetBaseURL(c.APIHost)
 	// set params
+	nodeType := c.NodeType
+	if nodeType == "" {
+		nodeType = "v2node"
+	}
 	client.SetQueryParams(map[string]string{
-		"node_type": "v2node",
+		"node_type": nodeType,
 		"node_id":   strconv.Itoa(c.NodeID),
 		"token":     c.Key,
 	})

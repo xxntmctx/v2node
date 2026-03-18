@@ -1,6 +1,6 @@
 module github.com/wyx2685/v2node
 
-go 1.26.0
+go 1.25.5
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0
@@ -231,4 +231,4 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/xtls/xray-core v1.260206.0 => github.com/wyx2685/xray-core v0.0.0-20260301200735-965d62dfa5de
+replace github.com/xtls/xray-core v1.260206.0 => ./xray-core

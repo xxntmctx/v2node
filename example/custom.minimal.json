@@ -1,0 +1,20 @@
+{
+  "outbounds": [
+    {
+      "protocol": "socks",
+      "tag": "jp_proxy",
+      "settings": {
+        "servers": [{"address": "127.0.0.1", "port": 40000}]
+      }
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "domain": ["geosite:netflix"],
+        "outboundTag": "jp_proxy"
+      }
+    ]
+  }
+}

@@ -86,7 +86,14 @@ func getCore(c *conf.Conf, infos []*panel.NodeInfo) *core.Instance {
 		ErrorLog:  c.LogConfig.Output,
 	}
 	// Custom config
-	dnsConfig, outBoundConfig, routeConfig, err := GetCustomConfig(infos)
+	var localPath string
+	for _, nc := range c.NodeConfigs {
+		if nc.CustomConfigPath != "" {
+			localPath = nc.CustomConfigPath
+			break
+		}
+	}
+	dnsConfig, outBoundConfig, routeConfig, err := GetCustomConfig(infos, localPath)
 	if err != nil {
 		log.WithField("err", err).Panic("failed to build custom config")
 	}

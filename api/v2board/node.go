@@ -42,6 +42,7 @@ type CommonNode struct {
 	CertInfo           *CertInfo
 	Network            string          `json:"network"`
 	NetworkSettings    json.RawMessage `json:"network_settings"`
+	NetworkSettingsXboard json.RawMessage `json:"networkSettings"`
 	Encryption         string          `json:"encryption"`
 	EncryptionSettings EncSettings     `json:"encryption_settings"`
 	ServerName         string          `json:"server_name"`
@@ -111,7 +112,7 @@ type EncSettings struct {
 }
 
 func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
-	const path = "/api/v2/server/config"
+	const path = "/api/v1/server/UniProxy/config"
 	r, err := c.client.
 		R().
 		SetHeader("If-None-Match", c.nodeEtag).
@@ -149,6 +150,9 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	err = json.Unmarshal(r.Body(), cm)
 	if err != nil {
 		return nil, fmt.Errorf("decode node params error: %s", err)
+	}
+	if cm.NetworkSettings == nil && cm.NetworkSettingsXboard != nil {
+		cm.NetworkSettings = cm.NetworkSettingsXboard
 	}
 	switch cm.Protocol {
 	case "vmess", "trojan", "hysteria2", "tuic", "anytls", "vless":

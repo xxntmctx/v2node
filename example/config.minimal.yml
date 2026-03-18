@@ -1,0 +1,10 @@
+# 最简配置（对接 Xboard，使用默认设置）
+
+Log:
+  Level: info
+
+Nodes:
+  - ApiHost: "https://your-panel.com"
+    NodeID: 1
+    NodeType: "vless"
+    ApiKey: "your_token"

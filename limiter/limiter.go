@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	panel "github.com/wyx2685/v2node/api/v2board"
-	"github.com/wyx2685/v2node/common/format"
-	"github.com/wyx2685/v2node/common/rate"
+	panel "github.com/xxntmctx/v2node/api/v2board"
+	"github.com/xxntmctx/v2node/common/format"
+	"github.com/xxntmctx/v2node/common/rate"
 )
 
 var limitLock sync.RWMutex

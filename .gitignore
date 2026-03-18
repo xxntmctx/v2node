@@ -17,8 +17,8 @@ output/*
 new.sh
 quick_update.sh
 
-# Local xray-core clone used for building on stable Go (do not commit this directory)
-xray-core/
+# Local xray-core clone used for building on stable Go (include this because of local replace)
+# xray-core/
 
 # Compiled binary output
 build_assets/

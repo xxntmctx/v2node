@@ -25,9 +25,15 @@ import (
 )
 
 func (v *V2Core) GetUserManager(tag string) (proxy.UserManager, error) {
+	v.access.Lock()
+	ihm := v.ihm
+	v.access.Unlock()
+	if ihm == nil {
+		return nil, fmt.Errorf("inbound manager is nil (core may be closing)")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	handler, err := v.ihm.GetHandler(ctx, tag)
+	handler, err := ihm.GetHandler(ctx, tag)
 	if err != nil {
 		return nil, fmt.Errorf("no such inbound tag: %s", err)
 	}

@@ -338,7 +338,7 @@ LimitNOFILE=999999
 WorkingDirectory=/usr/local/v2node/
 ExecStart=/usr/local/v2node/v2node server
 Restart=always
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target

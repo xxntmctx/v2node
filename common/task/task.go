@@ -56,7 +56,8 @@ func (t *Task) Start(first bool) error {
 }
 
 func (t *Task) ExecuteWithTimeout() error {
-	ctx, cancel := context.WithTimeout(context.Background(), min(3*t.Interval, 5*time.Minute))
+	timeout := min(3*t.Interval, 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	done := make(chan error, 1)
 
@@ -66,8 +67,12 @@ func (t *Task) ExecuteWithTimeout() error {
 
 	select {
 	case <-ctx.Done():
-		log.Errorf("Task %s execution timed out, reloading", t.Name)
-		t.Reload()
+		log.Warnf("Task %s execution timed out after %v, will retry next cycle", t.Name, timeout)
+		// Do NOT call Reload() here.
+		// The timed-out goroutine is still running and may access core resources.
+		// Reloading would tear down those resources, causing nil pointer panics
+		// or "inbound manager is nil" errors. Instead, let the next periodic
+		// execution retry naturally, which handles transient network issues.
 		return nil
 	case err := <-done:
 		return err

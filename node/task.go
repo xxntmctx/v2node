@@ -47,9 +47,25 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 }
 
 func (c *Controller) reloadTask() {
+	// Debounce: prevent concurrent reloads from multiple timed-out goroutines
+	c.reloadMu.Lock()
+	if c.reloading {
+		c.reloadMu.Unlock()
+		log.WithField("tag", c.tag).Warn("Reload already in progress, skipping")
+		return
+	}
+	c.reloading = true
+	c.reloadMu.Unlock()
+	defer func() {
+		c.reloadMu.Lock()
+		c.reloading = false
+		c.reloadMu.Unlock()
+	}()
+
 	newClient, err := panel.New(c.conf)
 	if err != nil {
-		log.Panic("Tasks reload failed")
+		log.WithField("tag", c.tag).Error("Tasks reload failed: cannot create new API client")
+		return
 	}
 	c.apiClient = newClient
 	c.nodeInfoMonitorPeriodic.Close()
@@ -73,16 +89,22 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if newN != nil {
 		log.WithFields(log.Fields{
 			"tag": c.tag,
-		}).Error("Got new node info, reload")
+		}).Info("Got new node info, triggering reload")
 		// Non-blocking signal to avoid goroutine stuck when channel is full or nil
 		if c.server.ReloadCh != nil {
 			select {
 			case c.server.ReloadCh <- struct{}{}:
 			default:
+				log.WithField("tag", c.tag).Warn("Reload already queued, skipping")
 			}
 		} else {
-			log.Panic("Reload failed")
+			log.WithField("tag", c.tag).Error("ReloadCh is nil, cannot trigger reload")
 		}
+		// Return immediately — do NOT continue to DelUsers/AddUsers
+		// because reload will destroy and rebuild the core instance.
+		// Continuing here would race with Close() and cause
+		// "inbound manager is nil" errors.
+		return nil
 	}
 	log.WithField("tag", c.tag).Debug("Node info no change")
 

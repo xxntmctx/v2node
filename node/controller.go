@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 	panel "github.com/xxntmctx/v2node/api/v2board"
@@ -24,6 +25,8 @@ type Controller struct {
 	nodeInfoMonitorPeriodic *task.Task
 	userReportPeriodic      *task.Task
 	renewCertPeriodic       *task.Task
+	reloadMu                sync.Mutex
+	reloading               bool
 }
 
 // NewController return a Node controller with default parameters.

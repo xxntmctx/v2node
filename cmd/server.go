@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -131,7 +132,15 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		case <-reloadCh:
 			log.Info("收到重启信号，正在重新加载配置...")
 			if err := reload(config, &nodes, &v2core); err != nil {
-				log.WithField("err", err).Panic("重启失败")
+				log.WithField("err", err).Error("重启失败，30秒后重试...")
+				// Wait before retrying to allow ports to release
+				time.Sleep(30 * time.Second)
+				// Re-queue reload signal for retry
+				select {
+				case reloadCh <- struct{}{}:
+				default:
+				}
+				continue
 			}
 			log.Info("重启成功")
 		}
@@ -152,6 +161,11 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 	if err := (*v2core).Close(); err != nil {
 		return err
 	}
+
+	// Wait for old listeners to fully release (TCP TIME_WAIT)
+	// Without this, the new core may fail with "bind: address already in use"
+	log.Info("等待端口释放...")
+	time.Sleep(3 * time.Second)
 
 	newConf := conf.New()
 	if err := newConf.LoadFromPath(config); err != nil {

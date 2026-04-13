@@ -1,6 +1,7 @@
 package node
 
 import (
+	"math/rand/v2"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -10,21 +11,25 @@ import (
 )
 
 func (c *Controller) startTasks(node *panel.NodeInfo) {
+	// Add random jitter (0-10s) to prevent all nodes from hitting the
+	// panel API simultaneously, which causes request storms and timeouts.
+	jitter := time.Duration(rand.IntN(10000)) * time.Millisecond
+
 	// fetch node info task
 	c.nodeInfoMonitorPeriodic = &task.Task{
 		Name:     "nodeInfoMonitor",
-		Interval: node.PullInterval,
+		Interval: node.PullInterval + jitter,
 		Execute:  c.nodeInfoMonitor,
 		Reload:   c.reloadTask,
 	}
 	// fetch user list task
 	c.userReportPeriodic = &task.Task{
 		Name:     "reportUserTrafficTask",
-		Interval: node.PushInterval,
+		Interval: node.PushInterval + jitter,
 		Execute:  c.reportUserTrafficTask,
 		Reload:   c.reloadTask,
 	}
-	log.WithField("tag", c.tag).Info("Start monitor node status")
+	log.WithField("tag", c.tag).Infof("Start monitor node status (jitter: %v)", jitter)
 	// delay to start nodeInfoMonitor
 	_ = c.nodeInfoMonitorPeriodic.Start(false)
 	log.WithField("tag", c.tag).Info("Start report node status")

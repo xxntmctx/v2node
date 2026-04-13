@@ -3,19 +3,21 @@ package task
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type Task struct {
-	Name     string
-	Interval time.Duration
-	Execute  func() error
-	Reload   func()
-	Access   sync.RWMutex
-	Running  bool
-	Stop     chan struct{}
+	Name      string
+	Interval  time.Duration
+	Execute   func() error
+	Reload    func()
+	Access    sync.RWMutex
+	Running   bool
+	Stop      chan struct{}
+	executing atomic.Bool // prevents overlapping executions
 }
 
 func (t *Task) Start(first bool) error {
@@ -56,6 +58,14 @@ func (t *Task) Start(first bool) error {
 }
 
 func (t *Task) ExecuteWithTimeout() error {
+	// Skip if previous execution is still running (goroutine leaked from last timeout).
+	// This prevents goroutine accumulation, which causes lock contention
+	// and cascading timeouts across all nodes.
+	if !t.executing.CompareAndSwap(false, true) {
+		log.Debugf("Task %s: previous execution still running, skipping this cycle", t.Name)
+		return nil
+	}
+
 	timeout := min(3*t.Interval, 5*time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -63,6 +73,7 @@ func (t *Task) ExecuteWithTimeout() error {
 
 	go func() {
 		done <- t.Execute()
+		t.executing.Store(false)
 	}()
 
 	select {
@@ -70,9 +81,8 @@ func (t *Task) ExecuteWithTimeout() error {
 		log.Warnf("Task %s execution timed out after %v, will retry next cycle", t.Name, timeout)
 		// Do NOT call Reload() here.
 		// The timed-out goroutine is still running and may access core resources.
-		// Reloading would tear down those resources, causing nil pointer panics
-		// or "inbound manager is nil" errors. Instead, let the next periodic
-		// execution retry naturally, which handles transient network issues.
+		// executing flag stays true until that goroutine finishes, preventing
+		// new overlapping executions from piling up.
 		return nil
 	case err := <-done:
 		return err
@@ -92,3 +102,4 @@ func (t *Task) Close() {
 	t.safeStop()
 	log.Warningf("Task %s stopped", t.Name)
 }
+

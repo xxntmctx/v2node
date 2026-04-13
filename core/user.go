@@ -54,8 +54,6 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 		return fmt.Errorf("get user manager error: %s", err)
 	}
 	var user string
-	vc.users.mapLock.Lock()
-	defer vc.users.mapLock.Unlock()
 	for i := range users {
 		user = format.UserTag(tag, users[i].Uuid)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -64,7 +62,7 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 		if err != nil {
 			return err
 		}
-		delete(vc.users.uidMap, user)
+		vc.users.uidMap.Delete(user)
 		if v, ok := vc.dispatcher.Counter.Load(tag); ok {
 			tc := v.(*counter.TrafficCounter)
 			tc.Delete(user)
@@ -80,8 +78,6 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 
 func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserTraffic, error) {
 	trafficSlice := make([]panel.UserTraffic, 0)
-	vc.users.mapLock.RLock()
-	defer vc.users.mapLock.RUnlock()
 	if v, ok := vc.dispatcher.Counter.Load(tag); ok {
 		c := v.(*counter.TrafficCounter)
 		c.Counters.Range(func(key, value interface{}) bool {
@@ -92,12 +88,18 @@ func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserT
 			if up+down > int64(mintraffic*1000) {
 				traffic.UpCounter.Store(0)
 				traffic.DownCounter.Store(0)
-				if vc.users.uidMap[email] == 0 {
+				val, ok := vc.users.uidMap.Load(email)
+				if !ok {
 					c.Delete(email)
 					return true
 				}
+				uid, ok := val.(int)
+				if !ok {
+					// This should not happen if added correctly
+					return true
+				}
 				trafficSlice = append(trafficSlice, panel.UserTraffic{
-					UID:      vc.users.uidMap[email],
+					UID:      uid,
 					Upload:   up,
 					Download: down,
 				})
@@ -113,10 +115,8 @@ func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserT
 }
 
 func (v *V2Core) AddUsers(p *AddUsersParams) (added int, err error) {
-	v.users.mapLock.Lock()
-	defer v.users.mapLock.Unlock()
 	for i := range p.Users {
-		v.users.uidMap[format.UserTag(p.Tag, p.Users[i].Uuid)] = p.Users[i].Id
+		v.users.uidMap.Store(format.UserTag(p.Tag, p.Users[i].Uuid), p.Users[i].Id)
 	}
 	var users []*protocol.User
 	switch p.NodeInfo.Type {

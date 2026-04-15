@@ -76,6 +76,9 @@ func (c *Controller) Start(x *core.V2Core) error {
 			return fmt.Errorf("request cert error: %s", err)
 		}
 	}
+	// Clean up any leftover tag from a previous failed start attempt
+	_ = c.server.DelNode(c.tag)
+
 	// Add new tag
 	err = c.server.AddNode(c.tag, node)
 	if err != nil {

@@ -204,10 +204,13 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 	// Reattach reload channel
 	newCore.ReloadCh = oldReloadCh
 	if err := newCore.Start(newNodes.NodeInfos); err != nil {
+		newCore.Close()
 		return err
 	}
 
 	if err := newNodes.Start(newConf.NodeConfigs, newCore); err != nil {
+		newNodes.Close()
+		newCore.Close()
 		return err
 	}
 

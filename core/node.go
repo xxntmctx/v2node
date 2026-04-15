@@ -13,6 +13,7 @@ func (v *V2Core) AddNode(tag string, info *panel.NodeInfo) error {
 	}
 	err = v.addInbound(inBoundConfig)
 	if err != nil {
+		_ = v.removeInbound(tag)
 		return fmt.Errorf("add inbound error: %s", err)
 	}
 	return nil

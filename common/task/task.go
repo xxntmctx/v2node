@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,8 +13,8 @@ import (
 type Task struct {
 	Name      string
 	Interval  time.Duration
-	Execute   func() error
-	Reload    func()
+	Execute   func(context.Context) error
+	ReloadCh  chan struct{} // 超时时触发主服务重启
 	Access    sync.RWMutex
 	Running   bool
 	Stop      chan struct{}
@@ -66,25 +67,34 @@ func (t *Task) ExecuteWithTimeout() error {
 		return nil
 	}
 
-	timeout := min(3*t.Interval, 5*time.Minute)
+	timeout := min(5*t.Interval, 5*time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	done := make(chan error, 1)
 
 	go func() {
-		done <- t.Execute()
+		done <- t.Execute(ctx)
 		t.executing.Store(false)
 	}()
 
 	select {
 	case <-ctx.Done():
-		log.Warnf("Task %s execution timed out after %v, will retry next cycle", t.Name, timeout)
-		// Do NOT call Reload() here.
-		// The timed-out goroutine is still running and may access core resources.
-		// executing flag stays true until that goroutine finishes, preventing
-		// new overlapping executions from piling up.
+		log.Errorf("Task %s execution timed out after %v, triggering service reload", t.Name, timeout)
+		// 超时后触发主服务重启（看门狗机制），让xray重新加载用户列表
+		if t.ReloadCh != nil {
+			select {
+			case t.ReloadCh <- struct{}{}:
+			default:
+				// 通道已满，说明reload已经在队列中
+			}
+		} else {
+			log.Panicf("Task %s: ReloadCh is nil, cannot trigger reload", t.Name)
+		}
 		return nil
 	case err := <-done:
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil
+		}
 		return err
 	}
 }

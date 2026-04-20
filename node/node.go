@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -29,7 +30,7 @@ func New(nodes []conf.NodeConfig) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		info, err := p.GetNodeInfo()
+		info, err := p.GetNodeInfo(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +103,7 @@ func (n *Node) startRetryLoop() {
 					allStarted = false
 					continue
 				}
-				info, err := p.GetNodeInfo()
+				info, err := p.GetNodeInfo(context.Background())
 				if err != nil {
 					log.WithFields(log.Fields{
 						"host":    node.APIHost,

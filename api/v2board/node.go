@@ -1,16 +1,16 @@
 package panel
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
-
-	"encoding/json"
 )
 
 // Security type
@@ -111,10 +111,11 @@ type EncSettings struct {
 	PrivateKey    string `json:"private_key"`
 }
 
-func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
+func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 	const path = "/api/v1/server/UniProxy/config"
 	r, err := c.client.
 		R().
+		SetContext(ctx).
 		SetHeader("If-None-Match", c.nodeEtag).
 		ForceContentType("application/json").
 		Get(path)

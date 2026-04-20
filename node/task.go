@@ -1,6 +1,8 @@
 package node
 
 import (
+	"context"
+	"errors"
 	"math/rand/v2"
 	"time"
 
@@ -20,14 +22,14 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		Name:     "nodeInfoMonitor",
 		Interval: node.PullInterval + jitter,
 		Execute:  c.nodeInfoMonitor,
-		Reload:   c.reloadTask,
+		ReloadCh: c.server.ReloadCh,
 	}
 	// fetch user list task
 	c.userReportPeriodic = &task.Task{
 		Name:     "reportUserTrafficTask",
 		Interval: node.PushInterval + jitter,
 		Execute:  c.reportUserTrafficTask,
-		Reload:   c.reloadTask,
+		ReloadCh: c.server.ReloadCh,
 	}
 	log.WithField("tag", c.tag).Infof("Start monitor node status (jitter: %v)", jitter)
 	// delay to start nodeInfoMonitor
@@ -42,7 +44,7 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 				Name:     "renewCertTask",
 				Interval: time.Hour * 24,
 				Execute:  c.renewCertTask,
-				Reload:   c.reloadTask,
+				ReloadCh: c.server.ReloadCh,
 			}
 			log.WithField("tag", c.tag).Info("Start renew cert")
 			// delay to start renewCert
@@ -51,40 +53,15 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	}
 }
 
-func (c *Controller) reloadTask() {
-	// Debounce: prevent concurrent reloads from multiple timed-out goroutines
-	c.reloadMu.Lock()
-	if c.reloading {
-		c.reloadMu.Unlock()
-		log.WithField("tag", c.tag).Warn("Reload already in progress, skipping")
-		return
-	}
-	c.reloading = true
-	c.reloadMu.Unlock()
-	defer func() {
-		c.reloadMu.Lock()
-		c.reloading = false
-		c.reloadMu.Unlock()
-	}()
 
-	newClient, err := panel.New(c.conf)
-	if err != nil {
-		log.WithField("tag", c.tag).Error("Tasks reload failed: cannot create new API client")
-		return
-	}
-	c.apiClient = newClient
-	c.nodeInfoMonitorPeriodic.Close()
-	c.userReportPeriodic.Close()
-	if c.renewCertPeriodic != nil {
-		c.renewCertPeriodic.Close()
-	}
-	c.startTasks(c.info)
-}
 
-func (c *Controller) nodeInfoMonitor() (err error) {
+func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 	// get node info
-	newN, err := c.apiClient.GetNodeInfo()
+	newN, err := c.apiClient.GetNodeInfo(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,
@@ -114,8 +91,11 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	log.WithField("tag", c.tag).Debug("Node info no change")
 
 	// get user info
-	newU, err := c.apiClient.GetUserList()
+	newU, err := c.apiClient.GetUserList(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,
@@ -123,8 +103,11 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		return nil
 	}
 	// get user alive
-	newA, err := c.apiClient.GetUserAlive()
+	newA, err := c.apiClient.GetUserAlive(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,

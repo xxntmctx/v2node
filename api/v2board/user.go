@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -38,16 +39,25 @@ func (c *Client) GetUserList(ctx context.Context) ([]UserInfo, error) {
 		SetHeader("X-Response-Format", "msgpack").
 		SetDoNotParseResponse(true).
 		Get(path)
+
+	if err != nil {
+		if r != nil && r.RawResponse != nil && r.RawResponse.Body != nil {
+			r.RawResponse.Body.Close()
+		}
+		return nil, err
+	}
 	if r == nil || r.RawResponse == nil {
 		return nil, fmt.Errorf("received nil response or raw response")
 	}
-	defer r.RawResponse.Body.Close()
+	defer func() {
+		if r.RawResponse.Body != nil {
+			_, _ = io.Copy(io.Discard, r.RawResponse.Body)
+			r.RawResponse.Body.Close()
+		}
+	}()
 
 	if r.StatusCode() == 304 {
 		return nil, nil
-	}
-	if err != nil {
-		return nil, err
 	}
 	userlist := &UserListBody{}
 	if strings.Contains(r.Header().Get("Content-Type"), "application/x-msgpack") {
@@ -77,11 +87,14 @@ func (c *Client) GetUserAlive(ctx context.Context) (map[int]int, error) {
 		c.AliveMap.Alive = make(map[int]int)
 		return c.AliveMap.Alive, nil
 	}
-	if r == nil || r.RawResponse == nil || r.StatusCode() >= 399 {
+	if r == nil || r.RawResponse == nil {
 		c.AliveMap.Alive = make(map[int]int)
 		return c.AliveMap.Alive, nil
 	}
-	defer r.RawResponse.Body.Close()
+	if r.StatusCode() >= 399 {
+		c.AliveMap.Alive = make(map[int]int)
+		return c.AliveMap.Alive, nil
+	}
 	if err := json.Unmarshal(r.Body(), c.AliveMap); err != nil {
 		fmt.Printf("unmarshal user alive list error: %s", err)
 		c.AliveMap.Alive = make(map[int]int)

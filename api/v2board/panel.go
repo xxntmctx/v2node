@@ -2,6 +2,8 @@ package panel
 
 import (
 	"errors"
+	"net"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -27,6 +29,19 @@ type Client struct {
 
 func New(c *conf.NodeConfig) (*Client, error) {
 	client := resty.New()
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	client.SetTransport(transport)
 	client.SetRetryCount(3)
 	if c.Timeout > 0 {
 		client.SetTimeout(time.Duration(c.Timeout) * time.Second)

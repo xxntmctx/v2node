@@ -236,7 +236,7 @@ generate_v2node_config() {
             "ApiHost": "${api_host}",
             "NodeID": ${node_id},
             "ApiKey": "${api_key}",
-            "Timeout": 15
+            "Timeout": 60
         }
     ]
 }
@@ -331,14 +331,16 @@ Wants=network.target
 User=root
 Group=root
 Type=simple
-LimitAS=infinity
-LimitRSS=infinity
 LimitCORE=infinity
 LimitNOFILE=999999
 WorkingDirectory=/usr/local/v2node/
 ExecStart=/usr/local/v2node/v2node server
 Restart=always
 RestartSec=30
+Environment="GOGC=50"
+Environment="GODEBUG=madvdontneed=1"
+MemoryHigh=400M
+MemoryMax=500M
 
 [Install]
 WantedBy=multi-user.target

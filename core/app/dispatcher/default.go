@@ -32,7 +32,14 @@ import (
 	"github.com/xtls/xray-core/transport/pipe"
 )
 
-var errSniffingTimeout = errors.New("timeout on sniffing")
+var (
+	errSniffingTimeout = errors.New("timeout on sniffing")
+	payloadPool        = sync.Pool{
+		New: func() interface{} {
+			return buf.NewWithSize(32767)
+		},
+	}
+)
 
 type cachedReader struct {
 	sync.Mutex
@@ -461,8 +468,9 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 }
 
 func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, network net.Network) (SniffResult, error) {
-	payload := buf.NewWithSize(32767)
-	defer payload.Release()
+	payload := payloadPool.Get().(*buf.Buffer)
+	payload.Clear()
+	defer payloadPool.Put(payload)
 
 	sniffer := NewSniffer(ctx)
 

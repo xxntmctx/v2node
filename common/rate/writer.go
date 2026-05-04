@@ -48,7 +48,10 @@ func (w *Writer) Close() error {
 func (w *Writer) WriteMultiBuffer(mb buf.MultiBuffer) error {
 	limiter := w.limiter.Get()
 	if limiter != nil {
-		limiter.Wait(int64(mb.Len()))
+		duration := limiter.Take(int64(mb.Len()))
+		if duration > 0 {
+			time.Sleep(duration)
+		}
 	}
 	return w.writer.WriteMultiBuffer(mb)
 }

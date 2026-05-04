@@ -332,15 +332,15 @@ User=root
 Group=root
 Type=simple
 LimitCORE=infinity
-LimitNOFILE=999999
+LimitNOFILE=512000
 WorkingDirectory=/usr/local/v2node/
 ExecStart=/usr/local/v2node/v2node server
 Restart=always
-RestartSec=30
+RestartSec=10
 Environment="GOGC=50"
 Environment="GODEBUG=madvdontneed=1"
-MemoryHigh=400M
-MemoryMax=500M
+MemoryHigh=500M
+MemoryMax=1024M
 
 [Install]
 WantedBy=multi-user.target

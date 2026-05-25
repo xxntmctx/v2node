@@ -3,6 +3,9 @@ package task
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,6 +83,18 @@ func (t *Task) ExecuteWithTimeout() error {
 	select {
 	case <-ctx.Done():
 		log.Errorf("Task %s execution timed out after %v, triggering service reload", t.Name, timeout)
+		
+		// Dump stack trace to identify where the task is stuck
+		// Added: Dump stack trace to local file
+		dumpFile := fmt.Sprintf("v2node_timeout_%s_%s.log", t.Name, time.Now().Format("20060102_150405"))
+		buf := make([]byte, 2*1024*1024) // 2MB
+		n := runtime.Stack(buf, true)
+		if err := os.WriteFile(dumpFile, buf[:n], 0644); err != nil {
+			log.Errorf("Failed to dump stack trace to %s: %v", dumpFile, err)
+		} else {
+			log.Warnf("Stack trace of all goroutines dumped to %s", dumpFile)
+		}
+
 		// 超时后触发主服务重启（看门狗机制），让xray重新加载用户列表
 		if t.ReloadCh != nil {
 			select {

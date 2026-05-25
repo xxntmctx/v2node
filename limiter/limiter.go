@@ -26,6 +26,7 @@ type Limiter struct {
 	UUIDtoUID     map[string]int // Key: UUID, value: Uid
 	UserLimitInfo *sync.Map      // Key: TagUUID value: UserLimitInfo
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *DynamicBucket
+	aliveLock     sync.RWMutex   // Added: protects AliveList
 	AliveList     map[int]int    // Key: Uid, value: alive_ip
 }
 
@@ -85,12 +86,16 @@ func DeleteLimiter(tag string) {
 }
 
 func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel.UserInfo, modified []panel.UserInfo) {
-	for i := range deleted {
-		l.UserLimitInfo.Delete(format.UserTag(tag, deleted[i].Uuid))
-		l.UserOnlineIP.Delete(format.UserTag(tag, deleted[i].Uuid))
-		l.SpeedLimiter.Delete(format.UserTag(tag, deleted[i].Uuid))
-		delete(l.UUIDtoUID, deleted[i].Uuid)
-		delete(l.AliveList, deleted[i].Id)
+	if len(deleted) > 0 {
+		l.aliveLock.Lock() // Added
+		for i := range deleted {
+			l.UserLimitInfo.Delete(format.UserTag(tag, deleted[i].Uuid))
+			l.UserOnlineIP.Delete(format.UserTag(tag, deleted[i].Uuid))
+			l.SpeedLimiter.Delete(format.UserTag(tag, deleted[i].Uuid))
+			delete(l.UUIDtoUID, deleted[i].Uuid)
+			delete(l.AliveList, deleted[i].Id)
+		}
+		l.aliveLock.Unlock() // Added
 	}
 	for i := range modified {
 		if v, ok := l.UserLimitInfo.Load(format.UserTag(tag, modified[i].Uuid)); ok {
@@ -171,7 +176,9 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, noUDPsource bool) (Dynam
 		// Store online user for device limit
 		newipMap := new(sync.Map)
 		newipMap.Store(ip, uid)
+		l.aliveLock.RLock() // Added
 		aliveIp := l.AliveList[uid]
+		l.aliveLock.RUnlock() // Added
 		// If any device is online
 		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
 			oldipMap := v.(*sync.Map)
@@ -239,4 +246,12 @@ func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
 type UserIpList struct {
 	Uid    int      `json:"Uid"`
 	IpList []string `json:"Ips"`
+}
+
+// SetAliveList sets the alive users list thread-safely
+// Added
+func (l *Limiter) SetAliveList(alive map[int]int) {
+	l.aliveLock.Lock()
+	defer l.aliveLock.Unlock()
+	l.AliveList = alive
 }

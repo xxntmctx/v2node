@@ -6,12 +6,14 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/xxntmctx/v2node/common/task"
 	"github.com/xxntmctx/v2node/conf"
 	"github.com/xxntmctx/v2node/core"
 	"github.com/xxntmctx/v2node/limiter"
@@ -69,6 +71,7 @@ func serverHandle(_ *cobra.Command, _ []string) {
 			log.WithField("err", err).Error("Open log file failed, using stdout instead")
 		}
 		log.SetOutput(f)
+		task.DumpDir = filepath.Dir(c.LogConfig.Output) // Added
 	}
 	// Enable pprof if configured
 	if c.PprofPort != 0 {
@@ -187,11 +190,12 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 		if err != nil {
 			log.WithField("err", err).Error("Open log file failed, using stdout instead")
 		} else {
-			// 关闭旧的日志文件（如果是文件）
+			// 关闭旧 of 日志文件（如果是文件）
 			if oldWriter, ok := log.StandardLogger().Out.(*os.File); ok && oldWriter != os.Stdout && oldWriter != os.Stderr {
 				oldWriter.Close()
 			}
 			log.SetOutput(f)
+			task.DumpDir = filepath.Dir(newConf.LogConfig.Output) // Added
 		}
 	}
 

@@ -25,3 +25,4 @@ build_assets/
 
 # Temp files
 build_error*.txt
+temp/*

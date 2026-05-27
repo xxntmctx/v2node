@@ -40,8 +40,16 @@ func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 
 func (m *LinkManager) CloseAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Copy the map to avoid lock re-entry in common.Close(w) -> w.Close() -> m.RemoveWriter(w)
+	links := make(map[*ManagedWriter]buf.Reader, len(m.links))
 	for w, r := range m.links {
+		links[w] = r
+	}
+	// Clear the original map since all links will be closed
+	m.links = make(map[*ManagedWriter]buf.Reader)
+	m.mu.Unlock()
+
+	for w, r := range links {
 		common.Close(w)
 		common.Interrupt(r)
 	}

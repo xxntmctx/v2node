@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 )
+
+var DumpDir string
 
 type Task struct {
 	Name      string
@@ -86,7 +89,13 @@ func (t *Task) ExecuteWithTimeout() error {
 		
 		// Dump stack trace to identify where the task is stuck
 		// Added: Dump stack trace to local file
-		dumpFile := fmt.Sprintf("v2node_timeout_%s_%s.log", t.Name, time.Now().Format("20060102_150405"))
+		dumpFileName := fmt.Sprintf("v2node_timeout_%s_%s.log", t.Name, time.Now().Format("20060102_150405"))
+		var dumpFile string
+		if DumpDir != "" {
+			dumpFile = filepath.Join(DumpDir, dumpFileName)
+		} else {
+			dumpFile = dumpFileName
+		}
 		buf := make([]byte, 2*1024*1024) // 2MB
 		n := runtime.Stack(buf, true)
 		if err := os.WriteFile(dumpFile, buf[:n], 0644); err != nil {

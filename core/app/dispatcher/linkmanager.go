@@ -32,6 +32,13 @@ func (m *LinkManager) AddLink(writer *ManagedWriter, reader buf.Reader) {
 	m.links[writer] = reader
 }
 
+// Added
+func (m *LinkManager) GetActiveCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.links)
+}
+
 func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

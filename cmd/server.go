@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context" // Added
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -8,6 +9,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug" // Added
+	"strings"       // Added
 	"syscall"
 	"time"
 
@@ -54,6 +57,14 @@ func serverHandle(_ *cobra.Command, _ []string) {
 	if err != nil {
 		log.WithField("err", err).Error("Load config file failed")
 		return
+	}
+	// Apply Go runtime optimizations
+	// Added
+	if c.GOGC > 0 {
+		debug.SetGCPercent(c.GOGC)
+	}
+	if c.MemLimit > 0 {
+		debug.SetMemoryLimit(c.MemLimit)
 	}
 	switch c.LogConfig.Level {
 	case "debug":
@@ -108,6 +119,16 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		return
 	}
 	log.Info("Nodes started")
+
+	// Monitor lifecycle management
+	// Added
+	var monitorCancel context.CancelFunc
+	if c.Monitor.Enable {
+		var ctx context.Context
+		ctx, monitorCancel = context.WithCancel(context.Background())
+		go startMonitor(ctx, c, v2core)
+	}
+
 	if watch {
 		// On file change, just signal reload; do not run reload concurrently here
 		err = c.Watch(config, func() {
@@ -118,6 +139,10 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		})
 		if err != nil {
 			log.WithField("err", err).Error("start watch failed")
+			// Added: clean up monitor before exit
+			if monitorCancel != nil {
+				monitorCancel()
+			}
 			return
 		}
 	}
@@ -131,9 +156,18 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		select {
 		case <-osSignals:
 			log.Info("收到退出信号，正在关闭程序...")
+			// Added: clean up monitor before exit
+			if monitorCancel != nil {
+				monitorCancel()
+			}
 			os.Exit(0)
 		case <-reloadCh:
 			log.Info("收到重启信号，正在重新加载配置...")
+			// Added: cancel old monitor
+			if monitorCancel != nil {
+				monitorCancel()
+				monitorCancel = nil
+			}
 			if err := reload(config, &nodes, &v2core); err != nil {
 				log.WithField("err", err).Error("重启失败，30秒后重试...")
 				// Wait before retrying to allow ports to release
@@ -146,6 +180,12 @@ func serverHandle(_ *cobra.Command, _ []string) {
 				continue
 			}
 			log.Info("重启成功")
+			// Added: start new monitor
+			if v2core.Config.Monitor.Enable {
+				var ctx context.Context
+				ctx, monitorCancel = context.WithCancel(context.Background())
+				go startMonitor(ctx, v2core.Config, v2core)
+			}
 		}
 	}
 }
@@ -173,6 +213,15 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 	newConf := conf.New()
 	if err := newConf.LoadFromPath(config); err != nil {
 		return err
+	}
+
+	// Apply Go runtime optimizations
+	// Added
+	if newConf.GOGC > 0 {
+		debug.SetGCPercent(newConf.GOGC)
+	}
+	if newConf.MemLimit > 0 {
+		debug.SetMemoryLimit(newConf.MemLimit)
 	}
 
 	switch newConf.LogConfig.Level {
@@ -223,4 +272,62 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 
 	runtime.GC()
 	return nil
+}
+
+// startMonitor runs a background goroutine to log top active users and warn on memory/connection spikes.
+// Added
+func startMonitor(ctx context.Context, c *conf.Conf, v2core *core.V2Core) {
+	log.Infof("活跃连接监控已启动，检测间隔：%d秒，报警阈值：%d", c.Monitor.Interval, c.Monitor.LogThreshold)
+	ticker := time.NewTicker(time.Duration(c.Monitor.Interval) * time.Second)
+	defer ticker.Stop()
+
+	lastReportTime := time.Now().Add(-5 * time.Minute) // 启动后尽快做第一次常规报告
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("监控收到取消信号，Monitor 协程退出")
+			return
+		case <-ticker.C:
+			// 堆内存状态
+			var memStats runtime.MemStats
+			runtime.ReadMemStats(&memStats)
+
+			// 检查是否发生内存警戒
+			var isMemoryWarn bool
+			if c.MemLimit > 0 && memStats.Alloc > uint64(float64(c.MemLimit)*0.85) {
+				isMemoryWarn = true
+			}
+
+			// 获取活跃连接排行 (TOP 5)
+			topUsers := v2core.GetTopActiveUsers(5)
+
+			// 检查是否有用户连接数超过警报线
+			var hasUserLimitWarn bool
+			var warnUsers []string
+			for _, userStr := range topUsers {
+				if idx := strings.Index(userStr, "(conns:"); idx != -1 {
+					var conns int
+					_, err := fmt.Sscanf(userStr[idx:], "(conns:%d)", &conns)
+					if err == nil && conns >= c.Monitor.LogThreshold {
+						hasUserLimitWarn = true
+						warnUsers = append(warnUsers, userStr)
+					}
+				}
+			}
+
+			// 触发警告日志
+			if isMemoryWarn {
+				log.Warnf("[WARN] 内存占用已达警戒线！当前已分配堆内存：%d MB, 限制：%d MB. 活跃用户 TOP 5: %v", memStats.Alloc/1024/1024, c.MemLimit/1024/1024, topUsers)
+			}
+			if hasUserLimitWarn {
+				log.Warnf("[WARN] 检测到异常并发连接用户！触发阈值连接数 (%d): %v", c.Monitor.LogThreshold, warnUsers)
+			}
+
+			// 常规报告 (每 5 分钟打印一次)
+			if time.Since(lastReportTime) >= 5*time.Minute {
+				log.Infof("[INFO] 活跃用户排行 TOP 5: %v | 当前堆内存分配：%d MB", topUsers, memStats.Alloc/1024/1024)
+				lastReportTime = time.Now()
+			}
+		}
+	}
 }

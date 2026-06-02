@@ -3,6 +3,24 @@
 Log:
   Level: info
 
+# Go 运行时调优（小内存 2G 服务器建议）
+Gogc: 50
+MemLimit: 1500000000 # 限制堆内存大约 1.4G，预留安全空隙
+
+# xray 连接回收与缓冲区裁剪优化
+Policy:
+  Handshake: 4
+  ConnectionIdle: 60  # 闲置连接 60 秒自动断开
+  UplinkOnly: 2
+  DownlinkOnly: 4
+  BufferSize: 4       # 每个连接缓冲限制为 4KB (原版硬编码 16KB)
+
+# 活跃用户审计监控 (只做日志输出警报，不做用户封禁)
+Monitor:
+  Enable: true
+  Interval: 30        # 每 30 秒检查一次连接排行
+  LogThreshold: 100   # 用户连接数超过 100 时触发 [WARN] 警报
+
 Nodes:
   - ApiHost: "https://your-panel.com"
     NodeID: 1

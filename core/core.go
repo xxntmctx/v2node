@@ -1,6 +1,8 @@
 package core
 
 import (
+	"fmt"  // Added
+	"sort" // Added
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -98,14 +100,15 @@ func getCore(c *conf.Conf, infos []*panel.NodeInfo) *core.Instance {
 	var inBoundConfig []*core.InboundHandlerConfig
 
 	// Policy config
+	// Modified
 	levelPolicyConfig := &coreConf.Policy{
 		StatsUserUplink:   true,
 		StatsUserDownlink: true,
-		Handshake:         proto.Uint32(4),
-		ConnectionIdle:    proto.Uint32(300),
-		UplinkOnly:        proto.Uint32(2),
-		DownlinkOnly:      proto.Uint32(4),
-		BufferSize:        proto.Int32(16),
+		Handshake:         proto.Uint32(c.PolicyConfig.Handshake),
+		ConnectionIdle:    proto.Uint32(c.PolicyConfig.ConnectionIdle),
+		UplinkOnly:        proto.Uint32(c.PolicyConfig.UplinkOnly),
+		DownlinkOnly:      proto.Uint32(c.PolicyConfig.DownlinkOnly),
+		BufferSize:        proto.Int32(c.PolicyConfig.BufferSize),
 	}
 	corePolicyConfig := &coreConf.PolicyConfig{}
 	corePolicyConfig.Levels = map[uint32]*coreConf.Policy{0: levelPolicyConfig}
@@ -131,4 +134,50 @@ func getCore(c *conf.Conf, infos []*panel.NodeInfo) *core.Instance {
 	}
 	log.Info("Xray Core Version: ", core.Version())
 	return server
+}
+
+// GetTopActiveUsers returns active users sorted by connection count descending.
+// Added
+func (v *V2Core) GetTopActiveUsers(n int) []string {
+	v.access.Lock()
+	disp := v.dispatcher
+	v.access.Unlock()
+	if disp == nil {
+		return nil
+	}
+
+	type userConn struct {
+		Email string
+		Conns int
+	}
+	var users []userConn
+
+	disp.LinkManagers.Range(func(key, value interface{}) bool {
+		email, ok := key.(string)
+		if !ok {
+			return true
+		}
+		lm, ok := value.(*dispatcher.LinkManager)
+		if !ok || lm == nil {
+			return true
+		}
+		conns := lm.GetActiveCount()
+		if conns > 0 {
+			users = append(users, userConn{
+				Email: email,
+				Conns: conns,
+			})
+		}
+		return true
+	})
+
+	sort.Slice(users, func(i, j int) bool {
+		return users[i].Conns > users[j].Conns
+	})
+
+	var result []string
+	for i := 0; i < len(users) && i < n; i++ {
+		result = append(result, fmt.Sprintf("%s(conns:%d)", users[i].Email, users[i].Conns))
+	}
+	return result
 }

@@ -1,0 +1,32 @@
+{
+  "Log": {
+    "Level": "warning",
+    "Output": "/etc/v2node/v2node.log",
+    "Access": "none"
+  },
+  "PprofPort": 6060,
+  "Gogc": 50,
+  "MemLimit": 1500000000,
+  "Policy": {
+    "Handshake": 4,
+    "ConnectionIdle": 60,
+    "UplinkOnly": 2,
+    "DownlinkOnly": 4,
+    "BufferSize": 4
+  },
+  "Monitor": {
+    "Enable": true,
+    "Interval": 30,
+    "LogThreshold": 100
+  },
+  "Nodes": [
+    {
+      "ApiHost": "https://your-panel.com",
+      "NodeID": 1,
+      "ApiKey": "your_api_key",
+      "NodeType": "vless",
+      "CustomConfigPath": "/etc/v2node/custom.json",
+      "Timeout": 30
+    }
+  ]
+}

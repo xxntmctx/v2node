@@ -165,7 +165,7 @@ func (*DefaultDispatcher) Start() error {
 func (*DefaultDispatcher) Close() error { return nil }
 
 // Modified
-func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, destination net.Destination) (*transport.Link, *transport.Link, *limiter.Limiter, error) {
+func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, destination net.Destination) (*transport.Link, *transport.Link, *ManagedWriter, error) {
 	opt := pipe.OptionsFromContext(ctx)
 	uplinkReader, uplinkWriter := pipe.New(opt...)
 	downlinkReader, downlinkWriter := pipe.New(opt...)
@@ -188,6 +188,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, de
 
 	var limit *limiter.Limiter
 	var err error
+	var managedWriter *ManagedWriter
 	if user != nil && len(user.Email) > 0 {
 		limit, err = limiter.GetLimiter(sessionInbound.Tag)
 		if err != nil {
@@ -242,7 +243,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, de
 			}
 		}
 
-		managedWriter := &ManagedWriter{
+		managedWriter = &ManagedWriter{
 			writer:  uplinkWriter,
 			manager: lm,
 		}
@@ -251,7 +252,6 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, de
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
-			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w)
 		}
 		var t *counter.TrafficCounter
 		if c, ok := d.Counter.Load(sessionInbound.Tag); !ok {
@@ -274,7 +274,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, de
 		}
 	}
 
-	return inboundLink, outboundLink, limit, nil
+	return inboundLink, outboundLink, managedWriter, nil
 }
 
 func (d *DefaultDispatcher) shouldOverride(ctx context.Context, result SniffResult, request session.SniffingRequest, destination net.Destination) bool {
@@ -341,12 +341,12 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 		ctx = session.ContextWithContent(ctx, content)
 	}
 	sniffingRequest := content.SniffingRequest
-	inbound, outbound, _, err := d.getLink(ctx, destination.Network, destination)
+	inbound, outbound, mw, err := d.getLink(ctx, destination.Network, destination)
 	if err != nil {
 		return nil, err
 	}
 	if !sniffingRequest.Enabled {
-		go d.routedDispatch(ctx, outbound, destination)
+		go d.routedDispatch(ctx, outbound, destination, mw)
 	} else {
 		go func() {
 			cReader := &cachedReader{
@@ -375,7 +375,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 					ob.Target = destination
 				}
 			}
-			d.routedDispatch(ctx, outbound, destination)
+			d.routedDispatch(ctx, outbound, destination, mw)
 		}()
 	}
 	return inbound, nil
@@ -408,6 +408,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 
 	var limit *limiter.Limiter
 	var err error
+	var mw *ManagedWriter
 	if user != nil && len(user.Email) > 0 {
 		limit, err = limiter.GetLimiter(sessionInbound.Tag)
 		if err != nil {
@@ -460,6 +461,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			writer:  outbound.Writer,
 			manager: lm,
 		}
+		mw = managedWriter
 		outbound.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
@@ -488,7 +490,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 
 	sniffingRequest := content.SniffingRequest
 	if !sniffingRequest.Enabled {
-		d.routedDispatch(ctx, outbound, destination)
+		d.routedDispatch(ctx, outbound, destination, mw)
 	} else {
 		cReader := &cachedReader{
 			reader: outbound.Reader.(buf.TimeoutReader),
@@ -516,7 +518,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 				ob.Target = destination
 			}
 		}
-		d.routedDispatch(ctx, outbound, destination)
+		d.routedDispatch(ctx, outbound, destination, mw)
 	}
 
 	return nil
@@ -579,7 +581,35 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 	return contentResult, contentErr
 }
 
-func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.Link, destination net.Destination) {
+func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.Link, destination net.Destination, mw *ManagedWriter) {
+	// Added: 敏感域名并发连接限制校验 (在流量嗅探/解析后再次核验，处理 IP 嗅探出域名的场景)
+	if mw != nil && len(d.CompiledDomainLimits) > 0 {
+		routingLink := routing_session.AsRoutingContext(ctx)
+		sessionInbound := session.InboundFromContext(ctx)
+		var user *protocol.MemoryUser
+		if sessionInbound != nil {
+			user = sessionInbound.User
+		}
+		if routingLink != nil && user != nil && len(user.Email) > 0 {
+			var matchedRules []int
+			for idx, rule := range d.CompiledDomainLimits {
+				if rule.Condition.Apply(routingLink) {
+					count := mw.manager.GetActiveCountByRuleIndex(idx)
+					if count >= rule.MaxConn {
+						errors.LogInfo(ctx, "Rejected sensitive connection after sniffing for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
+						mw.Close()
+						common.Close(link.Writer)
+						common.Interrupt(link.Reader)
+						return
+					}
+					matchedRules = append(matchedRules, idx)
+				}
+			}
+			// 更新 LinkManager 中的真实目标地址与解析出的规则匹配索引
+			mw.manager.UpdateLink(mw, destination.String(), matchedRules)
+		}
+	}
+
 	outbounds := session.OutboundsFromContext(ctx)
 	ob := outbounds[len(outbounds)-1]
 

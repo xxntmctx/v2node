@@ -109,6 +109,17 @@ func (m *LinkManager) GetTopDomains(n int) []string {
 	return result
 }
 
+// Added
+func (m *LinkManager) UpdateLink(writer *ManagedWriter, dest string, matchedRules []int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if info, ok := m.links[writer]; ok {
+		info.Destination = dest
+		info.MatchedRules = matchedRules
+		m.links[writer] = info
+	}
+}
+
 func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -67,8 +67,9 @@ func (v *V2Core) Start(infos []*panel.NodeInfo) error {
 		var ruleList []json.RawMessage
 		for _, limit := range v.Config.DomainLimits {
 			ruleMap := map[string]interface{}{
-				"type":   "field",
-				"domain": limit.Domains,
+				"type":        "field",
+				"domain":      limit.Domains,
+				"outboundTag": "block",
 			}
 			raw, err := json.Marshal(ruleMap)
 			if err != nil {

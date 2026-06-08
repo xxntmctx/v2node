@@ -11,6 +11,7 @@ import (
 
 	"github.com/xxntmctx/v2node/common/counter"
 	"github.com/xxntmctx/v2node/common/rate"
+	"github.com/xxntmctx/v2node/conf" // Added
 	"github.com/xxntmctx/v2node/limiter"
 
 	"github.com/xtls/xray-core/app/dispatcher"
@@ -107,6 +108,7 @@ func (r *cachedReader) Interrupt() {
 }
 
 // DefaultDispatcher is a default implementation of Dispatcher.
+// Modified
 type DefaultDispatcher struct {
 	ohm          outbound.Manager
 	router       routing.Router
@@ -114,7 +116,8 @@ type DefaultDispatcher struct {
 	stats        stats.Manager
 	fdns         dns.FakeDNSEngine
 	Counter      sync.Map
-	LinkManagers sync.Map // map[string]*LinkManager
+	LinkManagers sync.Map           // map[string]*LinkManager
+	DomainLimits []conf.DomainLimit // Added: 敏感域名并发限制规则
 }
 
 func init() {
@@ -154,7 +157,8 @@ func (*DefaultDispatcher) Start() error {
 // Close implements common.Closable.
 func (*DefaultDispatcher) Close() error { return nil }
 
-func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*transport.Link, *transport.Link, *limiter.Limiter, error) {
+// Modified
+func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, destination net.Destination) (*transport.Link, *transport.Link, *limiter.Limiter, error) {
 	opt := pipe.OptionsFromContext(ctx)
 	uplinkReader, uplinkWriter := pipe.New(opt...)
 	downlinkReader, downlinkWriter := pipe.New(opt...)
@@ -202,17 +206,36 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 		var lm *LinkManager
 		if lmloaded, ok := d.LinkManagers.Load(user.Email); !ok {
 			lm = &LinkManager{
-				links: make(map[*ManagedWriter]buf.Reader),
+				links: make(map[*ManagedWriter]LinkInfo), // Modified
 			}
 			d.LinkManagers.Store(user.Email, lm)
 		} else {
 			lm = lmloaded.(*LinkManager)
 		}
+
+		// Added: 敏感域名并发连接限制校验
+		if len(d.DomainLimits) > 0 {
+			destStr := destination.String()
+			for _, rule := range d.DomainLimits {
+				if strings.Contains(destStr, rule.Pattern) {
+					count := lm.GetActiveCountByPattern(rule.Pattern)
+					if count >= rule.MaxConn {
+						errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destStr, " due to DomainLimit limit (", count, "/", rule.MaxConn, ")")
+						common.Close(outboundLink.Writer)
+						common.Close(inboundLink.Writer)
+						common.Interrupt(outboundLink.Reader)
+						common.Interrupt(inboundLink.Reader)
+						return nil, nil, nil, errors.New("DomainLimit limit exceeded for pattern: " + rule.Pattern)
+					}
+				}
+			}
+		}
+
 		managedWriter := &ManagedWriter{
 			writer:  uplinkWriter,
 			manager: lm,
 		}
-		lm.AddLink(managedWriter, outboundLink.Reader)
+		lm.AddLink(managedWriter, outboundLink.Reader, destination.String()) // Modified
 		inboundLink.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
@@ -307,7 +330,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 		ctx = session.ContextWithContent(ctx, content)
 	}
 	sniffingRequest := content.SniffingRequest
-	inbound, outbound, _, err := d.getLink(ctx, destination.Network)
+	inbound, outbound, _, err := d.getLink(ctx, destination.Network, destination)
 	if err != nil {
 		return nil, err
 	}
@@ -395,12 +418,29 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 		var lm *LinkManager
 		if lmloaded, ok := d.LinkManagers.Load(user.Email); !ok {
 			lm = &LinkManager{
-				links: make(map[*ManagedWriter]buf.Reader),
+				links: make(map[*ManagedWriter]LinkInfo), // Modified
 			}
 			d.LinkManagers.Store(user.Email, lm)
 		} else {
 			lm = lmloaded.(*LinkManager)
 		}
+
+		// Added: 敏感域名并发连接限制校验
+		if len(d.DomainLimits) > 0 {
+			destStr := destination.String()
+			for _, rule := range d.DomainLimits {
+				if strings.Contains(destStr, rule.Pattern) {
+					count := lm.GetActiveCountByPattern(rule.Pattern)
+					if count >= rule.MaxConn {
+						errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destStr, " due to DomainLimit limit (", count, "/", rule.MaxConn, ")")
+						common.Close(outbound.Writer)
+						common.Interrupt(outbound.Reader)
+						return errors.New("DomainLimit limit exceeded for pattern: " + rule.Pattern)
+					}
+				}
+			}
+		}
+
 		managedWriter := &ManagedWriter{
 			writer:  outbound.Writer,
 			manager: lm,
@@ -424,7 +464,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			Reader:  &buf.TimeoutWrapperReader{Reader: outbound.Reader},
 			Counter: &ts.UpCounter,
 		}
-		lm.AddLink(managedWriter, outbound.Reader)
+		lm.AddLink(managedWriter, outbound.Reader, destination.String()) // Modified
 		outbound.Writer = &dispatcher.SizeStatWriter{
 			Counter: downcounter,
 			Writer:  outbound.Writer,

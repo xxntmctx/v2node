@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"runtime/debug" // Added
 	"strings"       // Added
+	"sync"          // Added
 	"syscall"
 	"time"
 
@@ -274,8 +275,16 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 	return nil
 }
 
+// Added: 线程安全地记录每个用户触发报警的次数
+var triggerCounter = struct {
+	sync.RWMutex
+	counts map[string]int
+}{
+	counts: make(map[string]int),
+}
+
 // startMonitor runs a background goroutine to log top active users and warn on memory/connection spikes.
-// Added
+// Modified
 func startMonitor(ctx context.Context, c *conf.Conf, v2core *core.V2Core) {
 	log.Infof("活跃连接监控已启动，检测间隔：%d秒，报警阈值：%d", c.Monitor.Interval, c.Monitor.LogThreshold)
 	ticker := time.NewTicker(time.Duration(c.Monitor.Interval) * time.Second)
@@ -304,13 +313,27 @@ func startMonitor(ctx context.Context, c *conf.Conf, v2core *core.V2Core) {
 			// 检查是否有用户连接数超过警报线
 			var hasUserLimitWarn bool
 			var warnUsers []string
+			nowStr := time.Now().Format("2006-01-02 15:04:05")
 			for _, userStr := range topUsers {
 				if idx := strings.Index(userStr, "(conns:"); idx != -1 {
 					var conns int
 					_, err := fmt.Sscanf(userStr[idx:], "(conns:%d)", &conns)
 					if err == nil && conns >= c.Monitor.LogThreshold {
 						hasUserLimitWarn = true
-						warnUsers = append(warnUsers, userStr)
+						email := userStr[:idx]
+
+						// 触发计数自增
+						triggerCounter.Lock()
+						triggerCounter.counts[email]++
+						times := triggerCounter.counts[email]
+						triggerCounter.Unlock()
+
+						// 获取该用户活跃域名的前 5 名
+						topDomains := v2core.GetTopDomainsForUser(email, 5)
+
+						// 组合审计详细信息
+						warnDetail := fmt.Sprintf("[%s] %s(当前连接:%d, 累计报警:%d次, 活跃域名TOP5:%v)", nowStr, email, conns, times, topDomains)
+						warnUsers = append(warnUsers, warnDetail)
 					}
 				}
 			}

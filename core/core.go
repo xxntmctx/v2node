@@ -60,6 +60,8 @@ func (v *V2Core) Start(infos []*panel.NodeInfo) error {
 	v.ihm = v.Server.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	v.ohm = v.Server.GetFeature(outbound.ManagerType()).(outbound.Manager)
 	v.dispatcher = v.Server.GetFeature(routing.DispatcherType()).(*dispatcher.DefaultDispatcher)
+	// Added: 注入域名限制规则
+	v.dispatcher.DomainLimits = v.Config.DomainLimits
 	return nil
 }
 
@@ -180,4 +182,25 @@ func (v *V2Core) GetTopActiveUsers(n int) []string {
 		result = append(result, fmt.Sprintf("%s(conns:%d)", users[i].Email, users[i].Conns))
 	}
 	return result
+}
+
+// GetTopDomainsForUser returns the top N active destinations for a user.
+// Added
+func (v *V2Core) GetTopDomainsForUser(email string, n int) []string {
+	v.access.Lock()
+	disp := v.dispatcher
+	v.access.Unlock()
+	if disp == nil {
+		return nil
+	}
+
+	val, ok := disp.LinkManagers.Load(email)
+	if !ok {
+		return nil
+	}
+	lm, ok := val.(*dispatcher.LinkManager)
+	if !ok || lm == nil {
+		return nil
+	}
+	return lm.GetTopDomains(n)
 }

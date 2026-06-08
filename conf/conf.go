@@ -16,6 +16,13 @@ type Conf struct {
 	MemLimit     int64         `mapstructure:"MemLimit"`
 	PolicyConfig PolicyConfig  `mapstructure:"Policy"`
 	Monitor      MonitorConfig `mapstructure:"Monitor"`
+	DomainLimits []DomainLimit `mapstructure:"DomainLimits"` // Added
+}
+
+// Added
+type DomainLimit struct {
+	Pattern string `mapstructure:"Pattern"`
+	MaxConn int    `mapstructure:"MaxConn"`
 }
 
 type LogConfig struct {

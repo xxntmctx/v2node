@@ -228,7 +228,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, destination net.Destina
 					if rule.Condition.Apply(routingLink) {
 						count := lm.GetActiveCountByRuleIndex(idx)
 						if count >= rule.MaxConn {
-							errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
+							errors.LogWarning(ctx, "Rejected sensitive connection for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
 							common.Close(outboundLink.Writer)
 							common.Close(inboundLink.Writer)
 							common.Interrupt(outboundLink.Reader)
@@ -433,7 +433,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 					if rule.Condition.Apply(routingLink) {
 						count := lm.GetActiveCountByRuleIndex(idx)
 						if count >= rule.MaxConn {
-							errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
+							errors.LogWarning(ctx, "Rejected sensitive connection for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
 							common.Close(outbound.Writer)
 							common.Interrupt(outbound.Reader)
 							return errors.New("DomainLimit limit exceeded")
@@ -583,7 +583,7 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 				if rule.Condition.Apply(routingLink) {
 					count := mw.manager.GetActiveCountByRuleIndex(idx)
 					if count >= rule.MaxConn {
-						errors.LogInfo(ctx, "Rejected sensitive connection after sniffing for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
+						errors.LogWarning(ctx, "Rejected sensitive connection after sniffing for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
 						mw.Close()
 						common.Close(link.Writer)
 						common.Interrupt(link.Reader)

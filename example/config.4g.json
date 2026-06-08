@@ -17,7 +17,8 @@
   "Monitor": {
     "Enable": true,
     "Interval": 30,
-    "LogThreshold": 200
+    "LogThreshold": 200,
+    "IPThreshold": 20
   },
   "Nodes": [
     {

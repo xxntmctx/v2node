@@ -58,18 +58,26 @@ func (c *Controller) reportUserTrafficTask(ctx context.Context) (err error) {
 		}
 
 		// Added: device count threshold alert — log top-5 IPs for anomalous users
-		if c.monitorConf.Enable && c.monitorConf.LogThreshold > 0 {
+		if c.monitorConf.Enable && c.monitorConf.IPThreshold > 0 {
+			// Build UID to UUID mapping for better logging readability
+			uidToUUID := make(map[int]string, len(c.userList))
+			for _, u := range c.userList {
+				uidToUUID[u.Id] = u.Uuid
+			}
+
 			for uid, ips := range data {
-				if len(ips) >= c.monitorConf.LogThreshold {
+				if len(ips) >= c.monitorConf.IPThreshold {
 					top5 := ips
 					if len(top5) > 5 {
 						top5 = top5[:5]
 					}
+					uuidStr := uidToUUID[uid]
 					log.WithFields(log.Fields{
 						"tag":       c.tag,
 						"uid":       uid,
+						"uuid":      uuidStr,
 						"ip_count":  len(ips),
-						"threshold": c.monitorConf.LogThreshold,
+						"threshold": c.monitorConf.IPThreshold,
 						"top5_ips":  top5,
 					}).Warn("ALERT: user online device count exceeded threshold")
 				}

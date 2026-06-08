@@ -18,8 +18,9 @@ Policy:
 # 活跃用户审计监控 (只做日志输出警报，不做用户封禁)
 Monitor:
   Enable: true
-  Interval: 30        # 每 30 秒检查一次在线设备排行
-  LogThreshold: 100   # 用户在线设备数（唯一IP数）超过此值时触发 [WARN] 警报，输出 Top5 IP
+  Interval: 30        # 每 30 秒检查一次连接排行与设备排行
+  LogThreshold: 100   # 用户并发连接数超过 100 时触发 [WARN] 警报
+  IPThreshold: 10     # 用户在线设备数（唯一IP数）超过 10 时触发 [WARN] 警报，输出 UUID 与 Top5 IP
 
 Nodes:
   - ApiHost: "https://your-panel.com"

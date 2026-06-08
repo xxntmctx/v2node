@@ -56,6 +56,7 @@ type MonitorConfig struct {
 	Enable       bool  `mapstructure:"Enable"`
 	Interval     int   `mapstructure:"Interval"`
 	LogThreshold int   `mapstructure:"LogThreshold"`
+	IPThreshold  int   `mapstructure:"IPThreshold"` // Added: IP (device) count warning threshold
 }
 
 // Modified
@@ -79,6 +80,7 @@ func New() *Conf {
 			Enable:       true,
 			Interval:     30,
 			LogThreshold: 100,
+			IPThreshold:  10, // Added: default threshold for IPs is 10
 		},
 	}
 }

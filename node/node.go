@@ -17,13 +17,15 @@ type Node struct {
 	nodeConfigs []conf.NodeConfig
 	v2core      *core.V2Core
 	stopRetry   chan struct{}
+	monitorConf conf.MonitorConfig // Added
 }
 
-func New(nodes []conf.NodeConfig) (*Node, error) {
+func New(nodes []conf.NodeConfig, monitorConf conf.MonitorConfig) (*Node, error) {
 	n := &Node{
 		controllers: make([]*Controller, len(nodes)),
 		NodeInfos:   make([]*panel.NodeInfo, len(nodes)),
 		nodeConfigs: nodes,
+		monitorConf: monitorConf, // Added
 	}
 	for i, node := range nodes {
 		p, err := panel.New(&node)
@@ -34,7 +36,7 @@ func New(nodes []conf.NodeConfig) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		n.controllers[i] = NewController(p, &node, info)
+		n.controllers[i] = NewController(p, &node, info, monitorConf) // Modified
 		n.NodeInfos[i] = info
 	}
 	return n, nil
@@ -114,7 +116,7 @@ func (n *Node) startRetryLoop() {
 					allStarted = false
 					continue
 				}
-				ctrl := NewController(p, &node, info)
+				ctrl := NewController(p, &node, info, n.monitorConf) // Modified
 				if err := ctrl.Start(n.v2core); err != nil {
 					log.WithFields(log.Fields{
 						"host":    node.APIHost,

@@ -25,14 +25,16 @@ type Controller struct {
 	nodeInfoMonitorPeriodic *task.Task
 	userReportPeriodic      *task.Task
 	renewCertPeriodic       *task.Task
+	monitorConf             conf.MonitorConfig // Added: device count alert config
 }
 
 // NewController return a Node controller with default parameters.
-func NewController(api *panel.Client, conf *conf.NodeConfig, info *panel.NodeInfo) *Controller {
+func NewController(api *panel.Client, nodeConf *conf.NodeConfig, info *panel.NodeInfo, monitorConf conf.MonitorConfig) *Controller {
 	controller := &Controller{
-		apiClient: api,
-		info:      info,
-		conf:      conf,
+		apiClient:   api,
+		info:        info,
+		conf:        nodeConf,
+		monitorConf: monitorConf, // Added
 	}
 	return controller
 }

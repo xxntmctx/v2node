@@ -56,6 +56,26 @@ func (c *Controller) reportUserTrafficTask(ctx context.Context) (err error) {
 			// json structure: { UID1:["ip1","ip2"],UID2:["ip3","ip4"] }
 			data[onlineuser.UID] = append(data[onlineuser.UID], onlineuser.IP)
 		}
+
+		// Added: device count threshold alert — log top-5 IPs for anomalous users
+		if c.monitorConf.Enable && c.monitorConf.LogThreshold > 0 {
+			for uid, ips := range data {
+				if len(ips) >= c.monitorConf.LogThreshold {
+					top5 := ips
+					if len(top5) > 5 {
+						top5 = top5[:5]
+					}
+					log.WithFields(log.Fields{
+						"tag":       c.tag,
+						"uid":       uid,
+						"ip_count":  len(ips),
+						"threshold": c.monitorConf.LogThreshold,
+						"top5_ips":  top5,
+					}).Warn("ALERT: user online device count exceeded threshold")
+				}
+			}
+		}
+
 		if len(data) != 0 {
 			if err = c.apiClient.ReportNodeOnlineUsers(ctx, &data); err != nil {
 				log.WithFields(log.Fields{

@@ -11,7 +11,6 @@ import (
 
 	"github.com/xxntmctx/v2node/common/counter"
 	"github.com/xxntmctx/v2node/common/rate"
-	"github.com/xxntmctx/v2node/conf" // Added
 	"github.com/xxntmctx/v2node/limiter"
 
 	"github.com/xtls/xray-core/app/dispatcher"
@@ -23,6 +22,7 @@ import (
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/app/router" // Added
 	"github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/features/policy"
@@ -107,17 +107,24 @@ func (r *cachedReader) Interrupt() {
 	}
 }
 
+// Added
+type CompiledDomainLimit struct {
+	Condition router.Condition
+	MaxConn   int
+	RawList   []string
+}
+
 // DefaultDispatcher is a default implementation of Dispatcher.
 // Modified
 type DefaultDispatcher struct {
-	ohm          outbound.Manager
-	router       routing.Router
-	policy       policy.Manager
-	stats        stats.Manager
-	fdns         dns.FakeDNSEngine
-	Counter      sync.Map
-	LinkManagers sync.Map           // map[string]*LinkManager
-	DomainLimits []conf.DomainLimit // Added: 敏感域名并发限制规则
+	ohm                  outbound.Manager
+	router               routing.Router
+	policy               policy.Manager
+	stats                stats.Manager
+	fdns                 dns.FakeDNSEngine
+	Counter              sync.Map
+	LinkManagers         sync.Map              // map[string]*LinkManager
+	CompiledDomainLimits []CompiledDomainLimit // Added: 预编译的敏感域名规则与限额
 }
 
 func init() {
@@ -214,18 +221,22 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, de
 		}
 
 		// Added: 敏感域名并发连接限制校验
-		if len(d.DomainLimits) > 0 {
-			destStr := destination.String()
-			for _, rule := range d.DomainLimits {
-				if strings.Contains(destStr, rule.Pattern) {
-					count := lm.GetActiveCountByPattern(rule.Pattern)
-					if count >= rule.MaxConn {
-						errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destStr, " due to DomainLimit limit (", count, "/", rule.MaxConn, ")")
-						common.Close(outboundLink.Writer)
-						common.Close(inboundLink.Writer)
-						common.Interrupt(outboundLink.Reader)
-						common.Interrupt(inboundLink.Reader)
-						return nil, nil, nil, errors.New("DomainLimit limit exceeded for pattern: " + rule.Pattern)
+		var matchedRules []int
+		if len(d.CompiledDomainLimits) > 0 {
+			routingLink := routing_session.AsRoutingContext(ctx)
+			if routingLink != nil {
+				for idx, rule := range d.CompiledDomainLimits {
+					if rule.Condition.Apply(routingLink) {
+						count := lm.GetActiveCountByRuleIndex(idx)
+						if count >= rule.MaxConn {
+							errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
+							common.Close(outboundLink.Writer)
+							common.Close(inboundLink.Writer)
+							common.Interrupt(outboundLink.Reader)
+							common.Interrupt(inboundLink.Reader)
+							return nil, nil, nil, errors.New("DomainLimit limit exceeded")
+						}
+						matchedRules = append(matchedRules, idx)
 					}
 				}
 			}
@@ -235,7 +246,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network, de
 			writer:  uplinkWriter,
 			manager: lm,
 		}
-		lm.AddLink(managedWriter, outboundLink.Reader, destination.String()) // Modified
+		lm.AddLink(managedWriter, outboundLink.Reader, destination.String(), matchedRules) // Modified
 		inboundLink.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
@@ -426,16 +437,20 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 		}
 
 		// Added: 敏感域名并发连接限制校验
-		if len(d.DomainLimits) > 0 {
-			destStr := destination.String()
-			for _, rule := range d.DomainLimits {
-				if strings.Contains(destStr, rule.Pattern) {
-					count := lm.GetActiveCountByPattern(rule.Pattern)
-					if count >= rule.MaxConn {
-						errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destStr, " due to DomainLimit limit (", count, "/", rule.MaxConn, ")")
-						common.Close(outbound.Writer)
-						common.Interrupt(outbound.Reader)
-						return errors.New("DomainLimit limit exceeded for pattern: " + rule.Pattern)
+		var matchedRules []int
+		if len(d.CompiledDomainLimits) > 0 {
+			routingLink := routing_session.AsRoutingContext(ctx)
+			if routingLink != nil {
+				for idx, rule := range d.CompiledDomainLimits {
+					if rule.Condition.Apply(routingLink) {
+						count := lm.GetActiveCountByRuleIndex(idx)
+						if count >= rule.MaxConn {
+							errors.LogInfo(ctx, "Rejected sensitive connection for ", user.Email, " to ", destination.String(), " due to DomainLimit limit (", count, "/", rule.MaxConn, ") matched: ", rule.RawList)
+							common.Close(outbound.Writer)
+							common.Interrupt(outbound.Reader)
+							return errors.New("DomainLimit limit exceeded")
+						}
+						matchedRules = append(matchedRules, idx)
 					}
 				}
 			}
@@ -464,7 +479,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			Reader:  &buf.TimeoutWrapperReader{Reader: outbound.Reader},
 			Counter: &ts.UpCounter,
 		}
-		lm.AddLink(managedWriter, outbound.Reader, destination.String()) // Modified
+		lm.AddLink(managedWriter, outbound.Reader, destination.String(), matchedRules) // Modified
 		outbound.Writer = &dispatcher.SizeStatWriter{
 			Counter: downcounter,
 			Writer:  outbound.Writer,

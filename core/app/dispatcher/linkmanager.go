@@ -26,10 +26,12 @@ func (w *ManagedWriter) Close() error {
 }
 
 // Added
+// Added
 type LinkInfo struct {
-	Reader      buf.Reader
-	Destination string
-	StartTime   time.Time
+	Reader       buf.Reader
+	Destination  string
+	StartTime    time.Time
+	MatchedRules []int // Added: 匹配到的限额规则索引列表
 }
 
 // Modified
@@ -39,13 +41,14 @@ type LinkManager struct {
 }
 
 // Modified
-func (m *LinkManager) AddLink(writer *ManagedWriter, reader buf.Reader, dest string) {
+func (m *LinkManager) AddLink(writer *ManagedWriter, reader buf.Reader, dest string, matchedRules []int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.links[writer] = LinkInfo{
-		Reader:      reader,
-		Destination: dest,
-		StartTime:   time.Now(),
+		Reader:       reader,
+		Destination:  dest,
+		StartTime:    time.Now(),
+		MatchedRules: matchedRules,
 	}
 }
 
@@ -57,13 +60,16 @@ func (m *LinkManager) GetActiveCount() int {
 }
 
 // Added
-func (m *LinkManager) GetActiveCountByPattern(pattern string) int {
+func (m *LinkManager) GetActiveCountByRuleIndex(idx int) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	count := 0
 	for _, info := range m.links {
-		if strings.Contains(info.Destination, pattern) {
-			count++
+		for _, ruleIdx := range info.MatchedRules {
+			if ruleIdx == idx {
+				count++
+				break
+			}
 		}
 	}
 	return count

@@ -21,8 +21,8 @@ type Conf struct {
 
 // Added
 type DomainLimit struct {
-	Pattern string `mapstructure:"Pattern"`
-	MaxConn int    `mapstructure:"MaxConn"`
+	Domains []string `mapstructure:"Domains"`
+	MaxConn int      `mapstructure:"MaxConn"`
 }
 
 type LogConfig struct {

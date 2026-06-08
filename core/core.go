@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json" // Added
 	"fmt"  // Added
 	"sort" // Added
 	"sync"
@@ -60,8 +61,44 @@ func (v *V2Core) Start(infos []*panel.NodeInfo) error {
 	v.ihm = v.Server.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	v.ohm = v.Server.GetFeature(outbound.ManagerType()).(outbound.Manager)
 	v.dispatcher = v.Server.GetFeature(routing.DispatcherType()).(*dispatcher.DefaultDispatcher)
-	// Added: 注入域名限制规则
-	v.dispatcher.DomainLimits = v.Config.DomainLimits
+
+	// Added: 预编译并注入域名限制规则
+	if len(v.Config.DomainLimits) > 0 {
+		var ruleList []json.RawMessage
+		for _, limit := range v.Config.DomainLimits {
+			ruleMap := map[string]interface{}{
+				"type":   "field",
+				"domain": limit.Domains,
+			}
+			raw, err := json.Marshal(ruleMap)
+			if err != nil {
+				return fmt.Errorf("failed to marshal domain limit rule: %w", err)
+			}
+			ruleList = append(ruleList, raw)
+		}
+		routerConfig := &coreConf.RouterConfig{
+			RuleList: ruleList,
+		}
+		builtConfig, err := routerConfig.Build()
+		if err != nil {
+			return fmt.Errorf("failed to build router config for domain limits: %w", err)
+		}
+
+		var compiledLimits []dispatcher.CompiledDomainLimit
+		for i, limit := range v.Config.DomainLimits {
+			routingRule := builtConfig.Rule[i]
+			condition, err := routingRule.BuildCondition()
+			if err != nil {
+				return fmt.Errorf("failed to build routing condition for domain limit: %w", err)
+			}
+			compiledLimits = append(compiledLimits, dispatcher.CompiledDomainLimit{
+				Condition: condition,
+				MaxConn:   limit.MaxConn,
+				RawList:   limit.Domains,
+			})
+		}
+		v.dispatcher.CompiledDomainLimits = compiledLimits
+	}
 	return nil
 }
 

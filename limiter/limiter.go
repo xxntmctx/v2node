@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -13,9 +14,58 @@ import (
 
 var limitLock sync.RWMutex
 var limiter map[string]*Limiter
+var cloudflareNets []*net.IPNet // Added: pre-compiled Cloudflare CDN IP ranges
+
+func initCloudflareNets() {
+	cfCIDRs := []string{
+		"173.245.48.0/20",
+		"103.21.244.0/22",
+		"103.22.200.0/22",
+		"103.31.4.0/22",
+		"141.101.64.0/18",
+		"108.162.192.0/18",
+		"190.93.240.0/20",
+		"188.114.96.0/20",
+		"197.234.240.0/22",
+		"198.41.128.0/17",
+		"162.158.0.0/15",
+		"104.16.0.0/13",
+		"104.24.0.0/14",
+		"172.64.0.0/13",
+		"131.0.72.0/22",
+		"2400:cb00::/32",
+		"2606:4700::/32",
+		"2803:f800::/32",
+		"2405:b500::/32",
+		"2405:8100::/32",
+		"2a06:98c0::/29",
+		"2c0f:f248::/32",
+		"::ffff:173.245.48.0/116",
+		"::ffff:103.21.244.0/118",
+		"::ffff:103.22.200.0/118",
+		"::ffff:103.31.4.0/118",
+		"::ffff:141.101.64.0/114",
+		"::ffff:108.162.192.0/114",
+		"::ffff:190.93.240.0/116",
+		"::ffff:188.114.96.0/116",
+		"::ffff:197.234.240.0/118",
+		"::ffff:198.41.128.0/113",
+		"::ffff:162.158.0.0/111",
+		"::ffff:104.16.0.0/109",
+		"::ffff:104.24.0.0/110",
+		"::ffff:172.64.0.0/109",
+		"::ffff:131.0.72.0/118",
+	}
+	for _, cidr := range cfCIDRs {
+		if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
+			cloudflareNets = append(cloudflareNets, ipnet)
+		}
+	}
+}
 
 func Init() {
 	limiter = map[string]*Limiter{}
+	initCloudflareNets() // Added
 }
 
 type Limiter struct {
@@ -148,6 +198,18 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 func (l *Limiter) CheckLimit(taguuid string, ip string, noUDPsource bool) (DynamicBucket *rate.DynamicBucket, Reject bool) {
 	// check if ipv4 mapped ipv6
 	ip = strings.TrimPrefix(ip, "::ffff:")
+
+	// Added: If the IP falls into Cloudflare CDN ranges, collapse it to a single identifier.
+	// This prevents device limit false-positives when real IP extraction fails (e.g. gRPC).
+	parsedIP := net.ParseIP(ip)
+	if parsedIP != nil {
+		for _, ipnet := range cloudflareNets {
+			if ipnet.Contains(parsedIP) {
+				ip = "Cloudflare-CDN"
+				break
+			}
+		}
+	}
 
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit

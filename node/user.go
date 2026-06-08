@@ -79,6 +79,7 @@ func (c *Controller) reportUserTrafficTask(ctx context.Context) (err error) {
 						"ip_count":  len(ips),
 						"threshold": c.monitorConf.IPThreshold,
 						"top5_ips":  top5,
+						"network":   c.info.Common.Network, // Added: print network protocol
 					}).Warn("ALERT: user online device count exceeded threshold")
 				}
 			}

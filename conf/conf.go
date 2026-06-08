@@ -7,7 +7,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Modified
+const DefaultNodeRetryCount = 1
+const DefaultNodeTimeout = 15
 type Conf struct {
 	LogConfig    LogConfig     `mapstructure:"Log"`
 	NodeConfigs  []NodeConfig  `mapstructure:"Nodes"`
@@ -38,6 +39,7 @@ type NodeConfig struct {
 	Key              string `mapstructure:"ApiKey"`
 	Timeout          int    `mapstructure:"Timeout"`
 	CustomConfigPath string `mapstructure:"CustomConfigPath"`
+	RetryCount       *int   `mapstructure:"RetryCount"`
 }
 
 // Added
@@ -95,5 +97,14 @@ func (p *Conf) LoadFromPath(filePath string) error {
 	if err := v.Unmarshal(p); err != nil {
 		return fmt.Errorf("unmarshal config error: %s", err)
 	}
+	for i := range p.NodeConfigs {
+		if p.NodeConfigs[i].RetryCount == nil {
+			p.NodeConfigs[i].RetryCount = intPtr(DefaultNodeRetryCount)
+		}
+	}
 	return nil
+}
+
+func intPtr(v int) *int {
+	return &v
 }

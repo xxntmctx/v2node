@@ -2,6 +2,7 @@ package panel
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -43,11 +44,18 @@ func New(c *conf.NodeConfig) (*Client, error) {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	client.SetTransport(transport)
-	client.SetRetryCount(3)
+
+	retryCount := conf.DefaultNodeRetryCount
+	if c.RetryCount != nil {
+		retryCount = *c.RetryCount
+	}
+	client.SetRetryCount(retryCount)
+	client.SetHeader("User-Agent", fmt.Sprintf("v2node go-resty/%s (https://github.com/go-resty/resty)", resty.Version))
+
 	if c.Timeout > 0 {
 		client.SetTimeout(time.Duration(c.Timeout) * time.Second)
 	} else {
-		client.SetTimeout(30 * time.Second)
+		client.SetTimeout(time.Duration(conf.DefaultNodeTimeout) * time.Second)
 	}
 	client.OnError(func(req *resty.Request, err error) {
 		var v *resty.ResponseError

@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -84,14 +85,13 @@ func (c *Client) GetUserAlive(ctx context.Context) (map[int]int, error) {
 		ForceContentType("application/json").
 		Get(path)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		c.AliveMap.Alive = make(map[int]int)
 		return c.AliveMap.Alive, nil
 	}
-	if r == nil || r.RawResponse == nil {
-		c.AliveMap.Alive = make(map[int]int)
-		return c.AliveMap.Alive, nil
-	}
-	if r.StatusCode() >= 399 {
+	if r == nil || r.RawResponse == nil || r.StatusCode() >= 399 {
 		c.AliveMap.Alive = make(map[int]int)
 		return c.AliveMap.Alive, nil
 	}
@@ -136,7 +136,7 @@ func (c *Client) ReportNodeOnlineUsers(ctx context.Context, data *map[int][]stri
 		Post(path)
 
 	if err != nil {
-		return nil
+		return err
 	}
 
 	return nil

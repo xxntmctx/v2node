@@ -136,4 +136,3 @@ func (t *Task) Close() {
 	t.safeStop()
 	log.Warningf("Task %s stopped", t.Name)
 }
-

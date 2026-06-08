@@ -109,7 +109,7 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 	// Set SniffingConfig
 	sniffingConfig := &coreConf.SniffingConfig{
 		Enabled:      true,
-		DestOverride: &coreConf.StringList{"http", "tls"},
+		DestOverride: coreConf.StringList{"http", "tls", "quic"},
 	}
 	in.SniffingConfig = sniffingConfig
 
@@ -148,9 +148,11 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 		}
 		in.StreamSetting.Security = "reality"
 		v := nodeInfo.Common
+		serverNames := v.TlsSettings.EffectiveServerNames()
+		shortIds := v.TlsSettings.EffectiveShortIds()
 		dest := v.TlsSettings.Dest
 		if dest == "" {
-			dest = v.TlsSettings.ServerName
+			dest = v.TlsSettings.PrimaryServerName()
 		}
 		xver := v.TlsSettings.Xver
 		d, err := json.Marshal(fmt.Sprintf(
@@ -164,9 +166,9 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 			Dest:        d,
 			Xver:        xver,
 			Show:        false,
-			ServerNames: []string{v.TlsSettings.ServerName},
+			ServerNames: serverNames,
 			PrivateKey:  v.TlsSettings.PrivateKey,
-			ShortIds:    []string{v.TlsSettings.ShortId},
+			ShortIds:    shortIds,
 			Mldsa65Seed: v.TlsSettings.Mldsa65Seed,
 		}
 	default:
@@ -427,25 +429,22 @@ func buildHysteria2(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourCon
 	hysteriasetting := &coreConf.HysteriaConfig{
 		Version: 2,
 	}
-	var finalmask *coreConf.FinalMask
+	finalmask := &coreConf.FinalMask{}
 	if !s.Ignore_Client_Bandwidth && (s.UpMbps > 0 || s.DownMbps > 0) {
-		finalmask = &coreConf.FinalMask{
-			QuicParams: &coreConf.QuicParamsConfig{
-				Congestion: "force-brutal",
-				BrutalUp:   up,
-				BrutalDown: down,
-			},
+		finalmask.QuicParams = &coreConf.QuicParamsConfig{
+			Congestion: "force-brutal",
+			BrutalUp:   up,
+			BrutalDown: down,
 		}
 	}
 	if s.Obfs != "" && s.ObfsPassword != "" {
 		rawobfsJSON := json.RawMessage(fmt.Sprintf(`{"password":"%s"}`, s.ObfsPassword))
-		udp := []conf.Mask{
+		finalmask.Udp = []conf.Mask{
 			{
 				Type:     s.Obfs,
 				Settings: &rawobfsJSON,
 			},
 		}
-		finalmask.Udp = udp
 	}
 	inbound.StreamSetting.FinalMask = finalmask
 	sets, err := json.Marshal(settings)

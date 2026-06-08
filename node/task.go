@@ -54,7 +54,6 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 }
 
 
-
 func (c *Controller) nodeInfoMonitor(ctx context.Context) (err error) {
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo(ctx)

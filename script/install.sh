@@ -402,7 +402,7 @@ EOF
     echo "v2node uninstall    - 卸载 v2node"
     echo "v2node version      - 查看 v2node 版本"
     echo "------------------------------------------"
-    curl -fsS --max-time 10 "https://api.v-50.me/counter" || true
+    # curl -fsS --max-time 10 "https://api.v-50.me/counter" || true
 
     if [[ $first_install == true ]]; then
         read -rp "检测到你为第一次安装 v2node，是否自动生成 /etc/v2node/config.json？(y/n): " if_generate

@@ -255,3 +255,40 @@ func (l *Limiter) SetAliveList(alive map[int]int) {
 	defer l.aliveLock.Unlock()
 	l.AliveList = alive
 }
+
+// GetActiveIPs returns the top N active online IPs for a user taguuid.
+// Added
+func (l *Limiter) GetActiveIPs(taguuid string, n int) []string {
+	var ips []string
+	if v, ok := l.UserOnlineIP.Load(taguuid); ok {
+		ipMap := v.(*sync.Map)
+		ipMap.Range(func(key, value interface{}) bool {
+			if ipStr, ok := key.(string); ok {
+				ips = append(ips, ipStr)
+				if len(ips) >= n {
+					return false
+				}
+			}
+			return true
+		})
+	}
+	return ips
+}
+
+// GetActiveIPsForAllLimiters returns active IPs across all limiters for a user taguuid.
+// Added
+func GetActiveIPsForAllLimiters(taguuid string, n int) []string {
+	limitLock.RLock()
+	defer limitLock.RUnlock()
+	var ips []string
+	for _, l := range limiter {
+		ips = append(ips, l.GetActiveIPs(taguuid, n)...)
+		if len(ips) >= n {
+			break
+		}
+	}
+	if len(ips) > n {
+		ips = ips[:n]
+	}
+	return ips
+}

@@ -10,6 +10,7 @@ import (
 	panel "github.com/xxntmctx/v2node/api/v2board"
 	"github.com/xxntmctx/v2node/conf"
 	"github.com/xxntmctx/v2node/core/app/dispatcher"
+	"github.com/xxntmctx/v2node/limiter"
 	_ "github.com/xxntmctx/v2node/core/distro/all"
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/app/stats"
@@ -241,4 +242,10 @@ func (v *V2Core) GetTopDomainsForUser(email string, n int) []string {
 		return nil
 	}
 	return lm.GetTopDomains(n)
+}
+
+// GetActiveIPsForUser returns the top N active IPs for a user.
+// Added
+func (v *V2Core) GetActiveIPsForUser(email string, n int) []string {
+	return limiter.GetActiveIPsForAllLimiters(email, n)
 }

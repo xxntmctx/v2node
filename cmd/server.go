@@ -331,8 +331,11 @@ func startMonitor(ctx context.Context, c *conf.Conf, v2core *core.V2Core) {
 						// 获取该用户活跃域名的前 5 名
 						topDomains := v2core.GetTopDomainsForUser(email, 5)
 
+						// 获取该用户活跃 IP 的前 5 个
+						activeIPs := v2core.GetActiveIPsForUser(email, 5)
+
 						// 组合审计详细信息
-						warnDetail := fmt.Sprintf("[%s] %s(当前连接:%d, 累计报警:%d次, 活跃域名TOP5:%v)", nowStr, email, conns, times, topDomains)
+						warnDetail := fmt.Sprintf("[%s] %s(当前连接:%d, 累计报警:%d次, 活跃IP前5:%v, 活跃域名TOP5:%v)", nowStr, email, conns, times, activeIPs, topDomains)
 						warnUsers = append(warnUsers, warnDetail)
 					}
 				}

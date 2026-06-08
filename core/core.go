@@ -69,7 +69,7 @@ func (v *V2Core) Start(infos []*panel.NodeInfo) error {
 			ruleMap := map[string]interface{}{
 				"type":        "field",
 				"domain":      limit.Domains,
-				"outboundTag": "block",
+				"outboundTag": "domain_limit_placeholder",
 			}
 			raw, err := json.Marshal(ruleMap)
 			if err != nil {

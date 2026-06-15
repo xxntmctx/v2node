@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/sirupsen/logrus" // Added
 	panel "github.com/xxntmctx/v2node/api/v2board"
 	"github.com/xxntmctx/v2node/common/counter"
 	"github.com/xxntmctx/v2node/common/format"
@@ -60,7 +61,13 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 		err = userManager.RemoveUser(ctx, user)
 		cancel()
 		if err != nil {
-			return err
+			// Added: Tolerant user not found (which means already deleted) and other non-critical issues.
+			if strings.Contains(err.Error(), "not found") {
+				log.Warnf("Remove user %s failed (user not found, ignoring): %v", user, err)
+			} else {
+				log.Errorf("Remove user %s failed (skipping): %v", user, err)
+				continue
+			}
 		}
 		vc.users.uidMap.Delete(user)
 		if v, ok := vc.dispatcher.Counter.Load(tag); ok {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings" // Added
 
 	panel "github.com/xxntmctx/v2node/api/v2board"
 )
@@ -22,6 +23,10 @@ func (v *V2Core) AddNode(tag string, info *panel.NodeInfo) error {
 func (v *V2Core) DelNode(tag string) error {
 	err := v.removeInbound(tag)
 	if err != nil {
+		// Added: Ignore error if the tag is not found (meaning it wasn't added successfully in the first place)
+		if strings.Contains(err.Error(), "not enough information") {
+			return nil
+		}
 		return fmt.Errorf("remove in error: %s", err)
 	}
 	return nil

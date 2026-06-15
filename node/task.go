@@ -22,14 +22,14 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		Name:     "nodeInfoMonitor",
 		Interval: node.PullInterval + jitter,
 		Execute:  c.nodeInfoMonitor,
-		ReloadCh: c.server.ReloadCh,
+		ReloadCh: nil, // Modified: Do not reload whole core on API fetch timeout
 	}
 	// fetch user list task
 	c.userReportPeriodic = &task.Task{
 		Name:     "reportUserTrafficTask",
 		Interval: node.PushInterval + jitter,
 		Execute:  c.reportUserTrafficTask,
-		ReloadCh: c.server.ReloadCh,
+		ReloadCh: nil, // Modified: Do not reload whole core on API traffic report timeout
 	}
 	log.WithField("tag", c.tag).Infof("Start monitor node status (jitter: %v)", jitter)
 	// delay to start nodeInfoMonitor
@@ -44,7 +44,7 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 				Name:     "renewCertTask",
 				Interval: time.Hour * 24,
 				Execute:  c.renewCertTask,
-				ReloadCh: c.server.ReloadCh,
+				ReloadCh: nil, // Modified: Do not reload core on cert task timeout
 			}
 			log.WithField("tag", c.tag).Info("Start renew cert")
 			// delay to start renewCert

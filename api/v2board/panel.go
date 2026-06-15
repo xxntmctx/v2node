@@ -36,11 +36,11 @@ func New(c *conf.NodeConfig) (*Client, error) {
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
+		MaxIdleConns:          200, // Modified
+		MaxIdleConnsPerHost:   100, // Modified (Enlarge connection pool limits per host)
 		IdleConnTimeout:       60 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second, // Modified
+		TLSHandshakeTimeout:   15 * time.Second, // Modified
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	client.SetTransport(transport)

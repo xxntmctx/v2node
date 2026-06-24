@@ -96,7 +96,7 @@ func (t *Task) ExecuteWithTimeout() error {
 		} else {
 			dumpFile = dumpFileName
 		}
-		buf := make([]byte, 2*1024*1024) // 2MB
+		buf := make([]byte, 8*1024*1024) // 8MB
 		n := runtime.Stack(buf, true)
 		if err := os.WriteFile(dumpFile, buf[:n], 0644); err != nil {
 			log.Errorf("Failed to dump stack trace to %s: %v", dumpFile, err)

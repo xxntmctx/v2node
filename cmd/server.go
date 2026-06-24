@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/natefinch/lumberjack" // Added
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/xxntmctx/v2node/common/task"
@@ -78,11 +79,15 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		log.SetLevel(log.ErrorLevel)
 	}
 	if c.LogConfig.Output != "" {
-		f, err := os.OpenFile(c.LogConfig.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			log.WithField("err", err).Error("Open log file failed, using stdout instead")
+		// Added: Use lumberjack for log rotation
+		lumberjackLogger := &lumberjack.Logger{
+			Filename:   c.LogConfig.Output,
+			MaxSize:    2,     // 2 MB
+			MaxBackups: 5,
+			MaxAge:     7,     // 7 days
+			Compress:   true,
 		}
-		log.SetOutput(f)
+		log.SetOutput(lumberjackLogger)
 		task.DumpDir = filepath.Dir(c.LogConfig.Output) // Added
 	}
 	// Enable pprof if configured
@@ -236,17 +241,22 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 		log.SetLevel(log.ErrorLevel)
 	}
 	if newConf.LogConfig.Output != "" {
-		f, err := os.OpenFile(newConf.LogConfig.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			log.WithField("err", err).Error("Open log file failed, using stdout instead")
-		} else {
-			// 关闭旧 of 日志文件（如果是文件）
-			if oldWriter, ok := log.StandardLogger().Out.(*os.File); ok && oldWriter != os.Stdout && oldWriter != os.Stderr {
-				oldWriter.Close()
-			}
-			log.SetOutput(f)
-			task.DumpDir = filepath.Dir(newConf.LogConfig.Output) // Added
+		// Added: Use lumberjack for log rotation on reload
+		lumberjackLogger := &lumberjack.Logger{
+			Filename:   newConf.LogConfig.Output,
+			MaxSize:    2,     // 2 MB
+			MaxBackups: 5,
+			MaxAge:     7,     // 7 days
+			Compress:   true,
 		}
+		// 关闭旧 of 日志文件（如果是 lumberjack.Logger 或是文件）
+		if oldWriter, ok := log.StandardLogger().Out.(*os.File); ok && oldWriter != os.Stdout && oldWriter != os.Stderr {
+			oldWriter.Close()
+		} else if oldLumberjack, ok := log.StandardLogger().Out.(*lumberjack.Logger); ok {
+			oldLumberjack.Close()
+		}
+		log.SetOutput(lumberjackLogger)
+		task.DumpDir = filepath.Dir(newConf.LogConfig.Output) // Added
 	}
 
 	newNodes, err := node.New(newConf.NodeConfigs, newConf.Monitor) // Modified

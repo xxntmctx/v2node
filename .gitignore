@@ -26,3 +26,6 @@ build_assets/
 # Temp files
 build_error*.txt
 temp/*
+
+# Local skills folder containing troubleshooting context
+skills/

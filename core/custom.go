@@ -263,6 +263,32 @@ func GetCustomConfig(infos []*panel.NodeInfo, localConfigPath string) (*dns.Conf
 			}
 			coreOutboundConfig = append(coreOutboundConfig, built)
 		}
+		// Merge extra DNS servers from local config
+		if localCfg.DNS != nil && len(localCfg.DNS.Servers) > 0 {
+			for _, raw := range localCfg.DNS.Servers {
+				server := &coreConf.NameServerConfig{}
+				// Try parsing as NameServerConfig object first
+				if err := json.Unmarshal(raw, server); err == nil && server.Address != nil {
+					coreDnsConfig.Servers = append(coreDnsConfig.Servers, server)
+				} else {
+					// If it fails, try parsing as a plain address string
+					var addrStr string
+					if err := json.Unmarshal(raw, &addrStr); err == nil {
+						coreDnsConfig.Servers = append(coreDnsConfig.Servers, &coreConf.NameServerConfig{
+							Address: &coreConf.Address{
+								Address: xnet.ParseAddress(addrStr),
+							},
+						})
+					}
+				}
+			}
+			// Rebuild DnsConfig
+			DnsConfig, err = coreDnsConfig.Build()
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("build dns config with local servers: %w", err)
+			}
+		}
+
 		// Rebuild RouterConfig merging local rules (prepend before panel rules)
 		if localCfg.Routing != nil && len(localCfg.Routing.Rules) > 0 {
 			// Prepend local rules before the panel-generated rules

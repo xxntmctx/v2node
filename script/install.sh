@@ -323,12 +323,12 @@ EOF
         # 动态根据宿主机物理内存按比例计算推荐资源配额
         local total_mem_mb
         total_mem_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
-        local go_mem_limit="700M"
+        local go_mem_limit="700MiB"
         local mem_high="800M"
         local mem_max="1024M"
 
         if [[ -n "$total_mem_mb" && "$total_mem_mb" -gt 0 ]]; then
-            go_mem_limit="$(( total_mem_mb * 70 / 100 ))M"
+            go_mem_limit="$(( total_mem_mb * 70 / 100 ))MiB"
             mem_high="$(( total_mem_mb * 80 / 100 ))M"
             mem_max="$(( total_mem_mb * 90 / 100 ))M"
         fi

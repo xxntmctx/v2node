@@ -1,12 +1,26 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 
 	log "github.com/sirupsen/logrus"
 )
+
+var (
+	reAllowInsecure = regexp.MustCompile(`"allowInsecure"\s*:\s*true`)
+)
+
+func sanitizeLocalConfigData(data []byte) []byte {
+	if bytes.Contains(data, []byte("allowInsecure")) {
+		data = reAllowInsecure.ReplaceAll(data, []byte(`"allowInsecure": false`))
+		log.Info("local config: sanitized legacy allowInsecure field for modern Xray compatibility")
+	}
+	return data
+}
 
 // LocalXrayConfig is a subset of the full xray config format.
 // Users can define any of these sections in their local custom.json file.
@@ -65,6 +79,8 @@ func LoadLocalConfig(path string) (*LocalXrayConfig, error) {
 		}
 		return nil, fmt.Errorf("read local config file %s: %w", path, err)
 	}
+
+	data = sanitizeLocalConfigData(data)
 
 	cfg := &LocalXrayConfig{}
 	if err := json.Unmarshal(data, cfg); err != nil {

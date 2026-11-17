@@ -385,6 +385,42 @@ type ShadowsocksHTTPNetworkSettings struct {
 	Host                string `json:"Host"`
 }
 
+// normalizeSS2022Key normalizes a Base64 key string, handling double-encoded UTF-8 runes or hex keys.
+func normalizeSS2022Key(key string, targetLen int) string {
+	parts := strings.Split(key, ":")
+	for i, part := range parts {
+		raw, err := base64.StdEncoding.DecodeString(part)
+		if err != nil {
+			raw = []byte(part)
+		}
+		if len(raw) == targetLen {
+			continue
+		}
+		if len(raw) > targetLen {
+			runes := []rune(string(raw))
+			if len(runes) == targetLen {
+				res := make([]byte, targetLen)
+				valid := true
+				for j, r := range runes {
+					if r > 0xFF {
+						valid = false
+						break
+					}
+					res[j] = byte(r)
+				}
+				if valid {
+					parts[i] = base64.StdEncoding.EncodeToString(res)
+					continue
+				}
+			}
+		}
+		if hexBytes, err := hex.DecodeString(part); err == nil && len(hexBytes) == targetLen {
+			parts[i] = base64.StdEncoding.EncodeToString(hexBytes)
+		}
+	}
+	return strings.Join(parts, ":")
+}
+
 func buildShadowsocks(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
 	inbound.Protocol = "shadowsocks"
 	s := nodeInfo.Common
@@ -404,7 +440,7 @@ func buildShadowsocks(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourC
 	randomPasswd := hex.EncodeToString(p)
 	cipher := s.Cipher
 	if s.ServerKey != "" {
-		settings.Password = s.ServerKey
+		settings.Password = normalizeSS2022Key(s.ServerKey, keyLength)
 		randomPasswd = base64.StdEncoding.EncodeToString(p)
 		cipher = ""
 	}

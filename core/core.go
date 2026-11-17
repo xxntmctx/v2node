@@ -171,7 +171,40 @@ func getCore(c *conf.Conf, infos []*panel.NodeInfo) *core.Instance {
 	}
 	server, err := core.New(config)
 	if err != nil {
-		log.WithField("err", err).Panic("failed to create instance")
+		log.WithField("err", err).Error("failed to create Xray instance with local/custom outbounds, attempting automated recovery")
+		// Always preserve core built-in outbounds: direct, block, dns_out
+		validOutbounds := make([]*core.OutboundHandlerConfig, 0, len(outBoundConfig))
+		for _, ob := range outBoundConfig {
+			if ob.Tag == "direct" || ob.Tag == "block" || ob.Tag == "dns_out" {
+				validOutbounds = append(validOutbounds, ob)
+			}
+		}
+		// Test each optional custom outbound individually
+		for _, ob := range outBoundConfig {
+			if ob.Tag == "direct" || ob.Tag == "block" || ob.Tag == "dns_out" {
+				continue
+			}
+			testConfig := &core.Config{
+				App:      config.App,
+				Inbound:  inBoundConfig,
+				Outbound: append(validOutbounds, ob),
+			}
+			if testServer, testErr := core.New(testConfig); testErr == nil {
+				_ = testServer.Close()
+				validOutbounds = append(validOutbounds, ob)
+			} else {
+				log.WithFields(log.Fields{
+					"tag": ob.Tag,
+					"err": testErr,
+				}).Warn("pruned faulty custom outbound to prevent service crash")
+			}
+		}
+		config.Outbound = validOutbounds
+		server, err = core.New(config)
+		if err != nil {
+			log.WithField("err", err).Panic("failed to create instance after outbound recovery")
+		}
+		log.Info("Xray instance recovered successfully after pruning faulty outbounds")
 	}
 	log.Info("Xray Core Version: ", core.Version())
 	return server

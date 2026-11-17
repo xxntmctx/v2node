@@ -180,13 +180,47 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 	if in.StreamSetting.SocketSettings == nil {
 		in.StreamSetting.SocketSettings = &coreConf.SocketConfig{}
 	}
-	in.StreamSetting.SocketSettings.TrustedXForwardedFor = []string{
+	// Modified: Merge panel trusted_x_forwarded_for with default Cloudflare/proxy headers
+	trustedHeaders := []string{
 		"X-Forwarded-For",
 		"CF-Connecting-IP",
 		"True-Client-IP",
 	}
+	if len(nodeInfo.Common.TrustedXForwardedFor) > 0 {
+		seen := make(map[string]bool)
+		for _, h := range trustedHeaders {
+			seen[strings.ToLower(h)] = true
+		}
+		for _, h := range nodeInfo.Common.TrustedXForwardedFor {
+			if !seen[strings.ToLower(h)] {
+				trustedHeaders = append(trustedHeaders, h)
+				seen[strings.ToLower(h)] = true
+			}
+		}
+	}
+	in.StreamSetting.SocketSettings.TrustedXForwardedFor = trustedHeaders
 	in.Tag = tag
 	return in.Build()
+}
+
+// Added: sanitizeInboundStreamSettings strips server-side Host restrictions to allow multi-domain SNI/Host routing
+func sanitizeInboundStreamSettings(streamSetting *coreConf.StreamConfig) {
+	if streamSetting == nil {
+		return
+	}
+	if streamSetting.WSSettings != nil && streamSetting.WSSettings.Headers != nil {
+		for k := range streamSetting.WSSettings.Headers {
+			if strings.EqualFold(k, "Host") {
+				delete(streamSetting.WSSettings.Headers, k)
+			}
+		}
+	}
+	if streamSetting.SplitHTTPSettings != nil {
+		streamSetting.SplitHTTPSettings.Host = ""
+	}
+	if streamSetting.HTTPUPGRADESettings != nil {
+		streamSetting.HTTPUPGRADESettings.Host = ""
+	}
 }
 
 func buildVLess(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
@@ -253,6 +287,7 @@ func buildVLess(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig)
 	default:
 		return errors.New("the network type is not vail")
 	}
+	sanitizeInboundStreamSettings(inbound.StreamSetting)
 	return nil
 }
 
@@ -300,6 +335,7 @@ func buildVMess(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig)
 	default:
 		return errors.New("the network type is not vail")
 	}
+	sanitizeInboundStreamSettings(inbound.StreamSetting)
 	return nil
 }
 
@@ -339,6 +375,7 @@ func buildTrojan(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig
 	default:
 		return errors.New("the network type is not vail")
 	}
+	sanitizeInboundStreamSettings(inbound.StreamSetting)
 	return nil
 }
 
@@ -354,7 +391,12 @@ func buildShadowsocks(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourC
 	settings := &coreConf.ShadowsocksServerConfig{
 		Cipher: s.Cipher,
 	}
-	p := make([]byte, 32)
+	// Modified: Fix SS2022 key length (16 for blake3-aes-128-gcm, 32 for others)
+	keyLength := 32
+	if s.Cipher == "2022-blake3-aes-128-gcm" {
+		keyLength = 16
+	}
+	p := make([]byte, keyLength)
 	_, err := rand.Read(p)
 	if err != nil {
 		return fmt.Errorf("generate random password error: %s", err)
@@ -363,7 +405,7 @@ func buildShadowsocks(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourC
 	cipher := s.Cipher
 	if s.ServerKey != "" {
 		settings.Password = s.ServerKey
-		randomPasswd = base64.StdEncoding.EncodeToString([]byte(randomPasswd))
+		randomPasswd = base64.StdEncoding.EncodeToString(p)
 		cipher = ""
 	}
 	defaultSSuser := &coreConf.ShadowsocksUserConfig{
@@ -522,6 +564,7 @@ func buildAnyTLS(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig
 		default:
 			return errors.New("the network type is not vail")
 		}
+		sanitizeInboundStreamSettings(inbound.StreamSetting)
 	}
 	sets, err := json.Marshal(settings)
 	inbound.Settings = (*json.RawMessage)(&sets)

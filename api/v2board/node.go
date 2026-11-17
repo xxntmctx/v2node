@@ -43,6 +43,7 @@ type CommonNode struct {
 	Network            string          `json:"network"`
 	NetworkSettings    json.RawMessage `json:"network_settings"`
 	NetworkSettingsXboard json.RawMessage `json:"networkSettings"`
+	TrustedXForwardedFor []string        `json:"trusted_x_forwarded_for"`
 	Encryption         string          `json:"encryption"`
 	EncryptionSettings EncSettings     `json:"encryption_settings"`
 	ServerName         string          `json:"server_name"`
@@ -90,6 +91,8 @@ type TlsSettings struct {
 	CertMode         string   `json:"cert_mode"`
 	CertFile         string   `json:"cert_file"`
 	KeyFile          string   `json:"key_file"`
+	TlsCert          string   `json:"tls_cert"`
+	TlsKey           string   `json:"tls_key"`
 	Provider         string   `json:"provider"`
 	DNSEnv           string   `json:"dns_env"`
 	RejectUnknownSni string   `json:"reject_unknown_sni"`
@@ -99,6 +102,8 @@ type CertInfo struct {
 	CertMode         string
 	CertFile         string
 	KeyFile          string
+	TlsCert          string
+	TlsKey           string
 	Email            string
 	CertDomain       string
 	DNSEnv           map[string]string
@@ -198,6 +203,10 @@ func (c *Client) GetNodeInfo(ctx context.Context) (node *NodeInfo, err error) {
 				cm.CertInfo.DNSEnv[kv[0]] = kv[1]
 			}
 		}
+	}
+	if cm.CertInfo.CertMode == "remote" {
+		cm.CertInfo.TlsCert = cm.TlsSettings.TlsCert
+		cm.CertInfo.TlsKey = cm.TlsSettings.TlsKey
 	}
 
 	// set interval

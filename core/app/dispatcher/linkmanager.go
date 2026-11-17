@@ -36,19 +36,22 @@ type LinkInfo struct {
 
 // Modified
 type LinkManager struct {
-	links map[*ManagedWriter]LinkInfo
-	mu    sync.RWMutex
+	links  map[*ManagedWriter]LinkInfo
+	mu     sync.RWMutex
+	closed bool
 }
 
 // Modified
 func (m *LinkManager) AddLink(writer *ManagedWriter, reader buf.Reader, dest string, matchedRules []int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.links[writer] = LinkInfo{
-		Reader:       reader,
-		Destination:  dest,
-		StartTime:    time.Now(),
-		MatchedRules: matchedRules,
+	if !m.closed {
+		m.links[writer] = LinkInfo{
+			Reader:       reader,
+			Destination:  dest,
+			StartTime:    time.Now(),
+			MatchedRules: matchedRules,
+		}
 	}
 }
 
@@ -113,22 +116,32 @@ func (m *LinkManager) GetTopDomains(n int) []string {
 func (m *LinkManager) UpdateLink(writer *ManagedWriter, dest string, matchedRules []int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if info, ok := m.links[writer]; ok {
-		info.Destination = dest
-		info.MatchedRules = matchedRules
-		m.links[writer] = info
+	if !m.closed {
+		if info, ok := m.links[writer]; ok {
+			info.Destination = dest
+			info.MatchedRules = matchedRules
+			m.links[writer] = info
+		}
 	}
 }
 
 func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.links, writer)
+	if !m.closed {
+		delete(m.links, writer)
+	}
 }
 
 // Modified
 func (m *LinkManager) CloseAll() {
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
+	m.closed = true
+
 	// Copy the map to avoid lock re-entry in common.Close(w) -> w.Close() -> m.RemoveWriter(w)
 	links := make(map[*ManagedWriter]buf.Reader, len(m.links))
 	for w, info := range m.links {

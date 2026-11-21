@@ -228,7 +228,9 @@ func buildVLess(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig)
 	inbound.Protocol = "vless"
 	var err error
 	decryption := "none"
-	if nodeInfo.Common.Encryption != "" {
+	if nodeInfo.Common.Decryption != "" {
+		decryption = nodeInfo.Common.Decryption
+	} else if nodeInfo.Common.Encryption != "" {
 		switch nodeInfo.Common.Encryption {
 		case "mlkem768x25519plus":
 			encSettings := nodeInfo.Common.EncryptionSettings

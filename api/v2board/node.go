@@ -44,6 +44,7 @@ type CommonNode struct {
 	NetworkSettings    json.RawMessage `json:"network_settings"`
 	NetworkSettingsXboard json.RawMessage `json:"networkSettings"`
 	TrustedXForwardedFor []string        `json:"trusted_x_forwarded_for"`
+	Decryption         string          `json:"decryption"`
 	Encryption         string          `json:"encryption"`
 	EncryptionSettings EncSettings     `json:"encryption_settings"`
 	ServerName         string          `json:"server_name"`
